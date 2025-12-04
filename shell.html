@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Alan Parsons Project</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a2f1a 0%, #2d4a2d 50%, #0f1f0f 100%);
+            font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #d4e8d4;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Ensure body is black in fullscreen */
+        body:-webkit-full-screen {
+            background: #000 !important;
+        }
+        body:-moz-full-screen {
+            background: #000 !important;
+        }
+        body:-ms-fullscreen {
+            background: #000 !important;
+        }
+        body:fullscreen {
+            background: #000 !important;
+        }
+
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            max-width: 1280px;
+            width: 100%;
+            padding: 15px;
+        }
+
+        h1 {
+            font-size: 2.3em;
+            text-align: center;
+            color: #d4af37;
+            text-shadow: 0 0 20px rgba(212, 175, 55, 0.6), 0 2px 4px rgba(0, 0, 0, 0.8);
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            font-weight: normal;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #a8c9a8;
+            font-size: 0.95em;
+            font-style: italic;
+            margin: -5px 0 15px 0;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 768px) {
+            #container {
+                gap: 8px;
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+                margin-bottom: 3px;
+            }
+        }
+
+        #canvas-container {
+            position: relative;
+            display: inline-block;
+            background: #000;
+        }
+
+        /* Webkit fullscreen prefix support */
+        #canvas-container:-webkit-full-screen {
+            width: 100vw !important;
+            height: 100vh !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        #canvas-container:-webkit-full-screen #canvas {
+            width: auto !important;
+            height: 100vh !important;
+            max-width: 100vw;
+            object-fit: contain;
+            border: none;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Mozilla fullscreen prefix support */
+        #canvas-container:-moz-full-screen {
+            width: 100vw !important;
+            height: 100vh !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        #canvas-container:-moz-full-screen #canvas {
+            width: auto !important;
+            height: 100vh !important;
+            max-width: 100vw;
+            object-fit: contain;
+            border: none;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* MS fullscreen prefix support */
+        #canvas-container:-ms-fullscreen {
+            width: 100vw !important;
+            height: 100vh !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        #canvas-container:-ms-fullscreen #canvas {
+            width: auto !important;
+            height: 100vh !important;
+            max-width: 100vw;
+            object-fit: contain;
+            border: none;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #canvas {
+            display: block;
+            background: #000;
+            border: 2px solid #4a9eff;
+            box-shadow: 0 0 20px rgba(74, 158, 255, 0.3);
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            cursor: default;  /* Keep cursor visible before game starts */
+        }
+
+        /* Hide cursor only when game has started */
+        #canvas.game-active {
+            cursor: none;
+        }
+
+        /* Mobile virtual controls */
+        #mobile-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+
+        #mobile-controls.active {
+            display: block;
+        }
+
+        .mobile-btn {
+            position: absolute;
+            background: rgba(139, 168, 127, 0.3);
+            border: 2px solid rgba(212, 175, 55, 0.8);
+            border-radius: 10px;
+            color: #f4f4e8;
+            font-weight: bold;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
+            pointer-events: auto;
+            user-select: none;
+            touch-action: none;
+            font-size: 16px;
+        }
+
+        .mobile-btn:active {
+            background: rgba(139, 168, 127, 0.6);
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.7);
+        }
+
+        /* Action buttons - right side (primary thumb zone) */
+        #btn-fire {
+            bottom: 30px;
+            right: 30px;
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            font-size: 22px;
+        }
+
+        #btn-nuke {
+            bottom: 140px;
+            right: 30px;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(255, 74, 74, 0.3);
+            border-color: rgba(255, 74, 74, 0.8);
+            font-size: 16px;
+        }
+
+        #btn-nuke:active {
+            background: rgba(255, 74, 74, 0.6);
+        }
+
+        /* Strafe buttons - left side (left thumb) */
+        #btn-strafe-left {
+            bottom: 30px;
+            left: 30px;
+            width: 70px;
+            height: 70px;
+        }
+
+        #btn-strafe-right {
+            bottom: 30px;
+            left: 115px;
+            width: 70px;
+            height: 70px;
+        }
+
+        /* Thrust buttons - hidden by default since tilt handles thrust */
+        #btn-thrust-up,
+        #btn-thrust-down {
+            display: none;
+        }
+
+        /* Tilt indicator */
+        #tilt-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(26, 47, 26, 0.8);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #8ba87f;
+            font-size: 14px;
+            color: #d4af37;
+            pointer-events: none;
+        }
+
+        /* Fullscreen canvas styling */
+        #canvas-container:fullscreen {
+            width: 100vw !important;
+            height: 100vh !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        #canvas-container:fullscreen #canvas {
+            width: auto !important;
+            height: 100vh !important;
+            max-width: 100vw;
+            object-fit: contain;
+            border: none;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Start prompt overlay */
+        #start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.7);
+            cursor: pointer;
+        }
+
+        #start-overlay .start-box {
+            text-align: center;
+            padding: 30px 50px;
+            background: rgba(26, 47, 26, 0.95);
+            border: 3px solid #d4af37;
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.5);
+        }
+
+        #start-overlay h2 {
+            color: #d4af37;
+            margin: 0 0 15px 0;
+            font-size: 2em;
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.8);
+        }
+
+        #start-overlay p {
+            margin: 0;
+            color: #a8c9a8;
+            font-size: 1.2em;
+        }
+
+        #status-container {
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+        }
+
+        #status {
+            font-size: 1.2em;
+            color: #a8c9a8;
+            margin-bottom: 10px;
+        }
+
+        #progress-container {
+            width: 100%;
+            height: 30px;
+            background: #1a2f1a;
+            border: 2px solid #8ba87f;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #8ba87f 0%, #5a7a4f 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px rgba(139, 168, 127, 0.5);
+        }
+
+        #progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000;
+        }
+
+        #controls {
+            background: rgba(26, 47, 26, 0.8);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #8ba87f;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        #controls h2 {
+            color: #d4af37;
+            margin: 0 0 6px 0;
+            font-size: 1.1em;
+        }
+
+        #controls ul {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4px 15px;
+            font-size: 0.88em;
+            margin: 0;
+        }
+
+        #controls li {
+            padding: 2px 0;
+        }
+
+        #controls .key {
+            color: #c9a65c;
+            font-weight: bold;
+            display: inline-block;
+            min-width: 85px;
+        }
+
+        @media (max-width: 768px) {
+            #controls {
+                padding: 8px 15px;
+            }
+
+            #controls h2 {
+                font-size: 1em;
+                margin-bottom: 4px;
+            }
+
+            #controls ul {
+                grid-template-columns: 1fr;
+                gap: 3px;
+                font-size: 0.8em;
+            }
+
+            #controls .key {
+                min-width: 65px;
+            }
+        }
+
+        .fullscreen-btn {
+            background: linear-gradient(135deg, #8ba87f 0%, #5a7a4f 100%);
+            color: #f4f4e8;
+            border: 1px solid #d4af37;
+            padding: 8px 20px;
+            font-size: 0.95em;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 10px rgba(139, 168, 127, 0.3);
+            font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+        }
+
+        .fullscreen-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(212, 175, 55, 0.5);
+            border-color: #d4af37;
+        }
+
+        .fullscreen-btn:active {
+            transform: translateY(0);
+        }
+
+        @media (max-width: 768px) {
+            .fullscreen-btn {
+                padding: 6px 15px;
+                font-size: 0.85em;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            #canvas {
+                max-width: 100%;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>The Alan Parsons Project</h1>
+        <div class="subtitle">A Journey Through Middle-earth's Skies</div>
+
+        <div id="status-container" class="hidden">
+            <div id="status">Loading game assets...</div>
+            <div id="progress-container">
+                <div id="progress-bar"></div>
+                <div id="progress-text">0%</div>
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="canvas" width="1280" height="800" style="width: 832px; height: 520px;" tabindex="-1"></canvas>
+            <div id="start-overlay">
+                <div class="start-box">
+                    <h2>🎮 Click to Start</h2>
+                    <p>Click anywhere to load &amp; play</p>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button class="fullscreen-btn hidden" id="fullscreen-btn">
+                Enter Fullscreen
+            </button>
+            <button class="fullscreen-btn hidden" id="captain-planet-btn" style="background: linear-gradient(135deg, #4a9eff 0%, #7b68ee 100%); display: flex; align-items: center; gap: 8px; justify-content: center; padding: 8px 20px;">
+                <span style="font-size: 1.3em;">☢</span>
+                <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                    <span id="captain-planet-text">Captain Planet Mode</span>
+                    <span style="font-size: 0.7em; opacity: 0.8;">Extra Nukes</span>
+                </div>
+            </button>
+            <button class="fullscreen-btn hidden" id="reset-btn" style="background: linear-gradient(135deg, #ff4a4a 0%, #ee687b 100%);">
+                Reset Progress
+            </button>
+        </div>
+
+        <div id="controls" class="hidden">
+            <h2>Controls</h2>
+            <ul id="controls-list">
+                <!-- Content populated by JavaScript based on device type -->
+            </ul>
+        </div>
+
+        <!-- Mobile touch controls overlay -->
+        <div id="mobile-controls">
+            <div id="tilt-indicator">Tilt to Steer</div>
+            <div id="btn-thrust-up" class="mobile-btn">▲<br>Thrust</div>
+            <div id="btn-thrust-down" class="mobile-btn">▼<br>Brake</div>
+            <div id="btn-strafe-left" class="mobile-btn">◄<br>Strafe</div>
+            <div id="btn-strafe-right" class="mobile-btn">►<br>Strafe</div>
+            <div id="btn-fire" class="mobile-btn">FIRE</div>
+            <div id="btn-nuke" class="mobile-btn">NUKE</div>
+        </div>
+    </div>
+
+    <script type='text/javascript'>
+        /* Check for WebAssembly support (disabled in iOS Lockdown Mode) */
+        if (typeof WebAssembly === 'undefined') {
+            document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;text-align:center;font-family:Palatino,serif;color:#d4e8d4;background:linear-gradient(135deg,#1a2f1a,#2d4a2d,#0f1f0f)">' +
+                '<h1 style="color:#d4af37;margin-bottom:20px">WebAssembly Not Available</h1>' +
+                '<p style="max-width:500px;line-height:1.6;margin-bottom:15px">This game requires WebAssembly to run, which is not available in your browser.</p>' +
+                '<p style="max-width:500px;line-height:1.6;color:#a8c9a8"><strong>iOS Users:</strong> If you have Lockdown Mode enabled, WebAssembly is disabled for security. You\'ll need to temporarily disable Lockdown Mode in Settings → Privacy & Security to play.</p>' +
+                '</div>';
+            throw new Error('WebAssembly not supported');
+        }
+
+        var statusElement = document.getElementById('status');
+        var progressBar = document.getElementById('progress-bar');
+        var progressText = document.getElementById('progress-text');
+        var statusContainer = document.getElementById('status-container');
+        var fullscreenBtn = document.getElementById('fullscreen-btn');
+        var resetBtn = document.getElementById('reset-btn');
+        var captainPlanetBtn = document.getElementById('captain-planet-btn');
+        var controlsDiv = document.getElementById('controls');
+        var startOverlay = document.getElementById('start-overlay');
+        window.gameStarted = false;
+
+        /* Mobile controls state */
+        var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        var mobileControls = document.getElementById('mobile-controls');
+        var tiltAlpha = 0;  /* Device orientation left/right tilt */
+        var tiltPermissionGranted = false;
+
+        /* BROWSER FULLSCREEN: Use standard Fullscreen API on container to keep overlay visible */
+        function requestFullscreen(event) {
+            /* Prevent button from getting focus/fullscreen */
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            var container = document.getElementById('canvas-container');
+            var isFullscreen = document.fullscreenElement || document.webkitFullscreenElement ||
+                               document.mozFullScreenElement || document.msFullscreenElement;
+
+            console.log('Fullscreen button clicked, current state:', isFullscreen ? 'fullscreen' : 'normal');
+            console.log('Current fullscreen element:', isFullscreen);
+
+            if (isFullscreen) {
+                /* Exit fullscreen */
+                console.log('Attempting to exit fullscreen...');
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().then(function() {
+                        console.log('Successfully exited fullscreen');
+                    }).catch(function(err) {
+                        console.error('Exit fullscreen failed:', err);
+                    });
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            } else {
+                /* Enter fullscreen on container to keep overlay */
+                console.log('Attempting to enter fullscreen on canvas-container...');
+                console.log('Container element:', container);
+                console.log('Container methods available:', {
+                    requestFullscreen: !!container.requestFullscreen,
+                    webkitRequestFullscreen: !!container.webkitRequestFullscreen,
+                    mozRequestFullScreen: !!container.mozRequestFullScreen,
+                    msRequestFullscreen: !!container.msRequestFullscreen
+                });
+
+                var fullscreenPromise = null;
+                if (container.requestFullscreen) {
+                    fullscreenPromise = container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    fullscreenPromise = container.webkitRequestFullscreen();
+                } else if (container.mozRequestFullScreen) {
+                    fullscreenPromise = container.mozRequestFullScreen();
+                } else if (container.msRequestFullscreen) {
+                    fullscreenPromise = container.msRequestFullscreen();
+                } else {
+                    console.error('Fullscreen API not supported in this browser');
+                    alert('Fullscreen is not supported in your browser');
+                    return;
+                }
+
+                if (fullscreenPromise && fullscreenPromise.then) {
+                    fullscreenPromise.then(function() {
+                        console.log('Successfully entered fullscreen on container');
+                    }).catch(function(err) {
+                        console.error('Enter fullscreen failed:', err);
+                        alert('Fullscreen failed: ' + err.message);
+                    });
+                }
+            }
+
+            return false;  /* Prevent default button behavior */
+        }
+
+        /* Attach button handlers */
+        document.addEventListener('DOMContentLoaded', function() {
+            var fsBtn = document.getElementById('fullscreen-btn');
+            if (fsBtn) {
+                fsBtn.addEventListener('click', requestFullscreen);
+            }
+
+            var resetBtn = document.getElementById('reset-btn');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', resetProgress);
+            }
+
+            var cpBtn = document.getElementById('captain-planet-btn');
+            if (cpBtn) {
+                cpBtn.addEventListener('click', toggleCaptainPlanet);
+            }
+
+            /* Check if Captain Planet mode should be unlocked */
+            checkCaptainPlanetUnlock();
+        });
+
+        /* Update button text when entering/exiting fullscreen - handle all browser variants */
+        function updateFullscreenButton() {
+            var isFullscreen = document.fullscreenElement || document.webkitFullscreenElement ||
+                               document.mozFullScreenElement || document.msFullscreenElement;
+            console.log('Fullscreen state changed:', isFullscreen ? 'fullscreen' : 'normal');
+            console.log('Fullscreen element:', isFullscreen);
+            if (isFullscreen) {
+                fullscreenBtn.textContent = 'Exit Fullscreen (or press ESC)';
+            } else {
+                fullscreenBtn.textContent = 'Enter Fullscreen';
+            }
+        }
+
+        document.addEventListener('fullscreenchange', updateFullscreenButton);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+        document.addEventListener('mozfullscreenchange', updateFullscreenButton);
+        document.addEventListener('msfullscreenchange', updateFullscreenButton);
+
+        /* Also handle fullscreen errors */
+        document.addEventListener('fullscreenerror', function(e) {
+            console.error('Fullscreen error event:', e);
+        });
+        document.addEventListener('webkitfullscreenerror', function(e) {
+            console.error('Webkit fullscreen error event:', e);
+        });
+
+        /* Reset game progress - clear localStorage and reload */
+        function resetProgress() {
+            if (confirm('Are you sure you want to reset all game progress? This cannot be undone.')) {
+                console.log('Resetting game progress...');
+                localStorage.removeItem('alan_parsons_level');
+                localStorage.removeItem('alan_parsons_weapons');
+                localStorage.removeItem('alan_parsons_beaten');
+                localStorage.removeItem('alan_parsons_captain_planet');
+                console.log('Progress cleared, reloading page...');
+                location.reload();
+            }
+        }
+
+        /* Toggle Captain Planet mode (18 nukes instead of 4) */
+        function toggleCaptainPlanet() {
+            var currentMode = localStorage.getItem('alan_parsons_captain_planet');
+            var textSpan = document.getElementById('captain-planet-text');
+            if (currentMode === '1') {
+                /* Disable Captain Planet mode */
+                localStorage.removeItem('alan_parsons_captain_planet');
+                console.log('Captain Planet mode disabled - back to 4 nukes');
+                textSpan.textContent = 'Captain Planet Mode';
+                captainPlanetBtn.style.background = 'linear-gradient(135deg, #4a9eff 0%, #7b68ee 100%)';
+            } else {
+                /* Enable Captain Planet mode */
+                localStorage.setItem('alan_parsons_captain_planet', '1');
+                console.log('Captain Planet mode enabled - 18 nukes!');
+                textSpan.textContent = 'Captain Planet: ON';
+                captainPlanetBtn.style.background = 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)';
+            }
+            /* Reload to apply changes */
+            setTimeout(function() {
+                location.reload();
+            }, 500);
+        }
+
+        /* Check if game has been beaten and show Captain Planet button */
+        function checkCaptainPlanetUnlock() {
+            var beaten = localStorage.getItem('alan_parsons_beaten');
+            if (beaten === '1') {
+                captainPlanetBtn.classList.remove('hidden');
+
+                /* Update button appearance if mode is active */
+                var cpMode = localStorage.getItem('alan_parsons_captain_planet');
+                if (cpMode === '1') {
+                    var textSpan = document.getElementById('captain-planet-text');
+                    textSpan.textContent = 'Captain Planet: ON';
+                    captainPlanetBtn.style.background = 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)';
+                }
+            }
+        }
+
+        var Module = {
+            preRun: [],
+            postRun: [],
+            print: (function() {
+                return function(text) {
+                    console.log(text);
+                };
+            })(),
+            printErr: function(text) {
+                console.error(text);
+            },
+            canvas: (function() {
+                var canvas = document.getElementById('canvas');
+                canvas.addEventListener("webglcontextlost", function(e) {
+                    alert('WebGL context lost. You will need to reload the page.');
+                    e.preventDefault();
+                }, false);
+                return canvas;
+            })(),
+            setStatus: function(text) {
+                if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+                if (text === Module.setStatus.last.text) return;
+
+                var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                var now = Date.now();
+
+                /* Throttle updates but not too aggressively */
+                if (m && now - Module.setStatus.last.time < 50) return;
+                Module.setStatus.last.time = now;
+                Module.setStatus.last.text = text;
+
+                if (m) {
+                    var loaded = parseFloat(m[2]);
+                    var total = parseFloat(m[4]);
+                    var progress = (loaded / total) * 100;
+                    progressBar.style.width = progress + '%';
+
+                    /* Format nicely for large byte counts vs small dependency counts */
+                    if (total > 1000) {
+                        /* Byte download - show MB */
+                        var loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+                        var totalMB = (total / (1024 * 1024)).toFixed(0);
+                        progressText.textContent = loadedMB + ' / ' + totalMB + ' MB';
+                        text = 'Downloading...';
+                    } else {
+                        /* Dependency count */
+                        progressText.textContent = Math.round(progress) + '%';
+                        text = m[1].trim();
+                    }
+                } else if (text.indexOf('Decompressing') !== -1 || text.indexOf('decompressing') !== -1) {
+                    /* Show decompression state */
+                    progressText.textContent = 'Unpacking...';
+                    text = 'Decompressing game data...';
+                }
+
+                statusElement.textContent = text;
+
+                if (text === '') {
+                    statusContainer.classList.add('hidden');
+                    fullscreenBtn.classList.remove('hidden');
+                    resetBtn.classList.remove('hidden');
+                    controlsDiv.classList.remove('hidden');
+                }
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: function(left) {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : '');
+            }
+        };
+
+        Module.setStatus('Downloading game...');
+
+        window.onerror = function(event) {
+            Module.setStatus('Error: ' + event);
+        };
+
+        /* SCROLL FIX: Prevent canvas from blocking page scroll */
+        var canvas = document.getElementById('canvas');
+        document.getElementById('canvas').addEventListener('wheel', function(e) {
+            /* Allow scroll events to bubble up to the page */
+            e.stopPropagation();
+        }, { passive: true });
+
+        /* =============================================================================
+           MOBILE CONTROLS IMPLEMENTATION
+           ============================================================================= */
+
+        /* Request device orientation permission (iOS 13+) */
+        function requestOrientationPermission() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(function(response) {
+                        if (response === 'granted') {
+                            console.log('Device orientation permission granted');
+                            tiltPermissionGranted = true;
+                            startOrientationListening();
+                        } else {
+                            console.log('Device orientation permission denied');
+                            alert('Tilt controls require device orientation access. Using touch buttons only.');
+                        }
+                    })
+                    .catch(function(error) {
+                        console.error('Error requesting orientation permission:', error);
+                    });
+            } else {
+                /* No permission needed (Android, older iOS) */
+                tiltPermissionGranted = true;
+                startOrientationListening();
+            }
+        }
+
+        /* Start listening to device orientation */
+        function startOrientationListening() {
+            window.addEventListener('deviceorientation', function(event) {
+                if (window.gameStarted && tiltPermissionGranted) {
+                    /* Use gamma for left/right tilt (steering): -90 to 90 degrees */
+                    var gamma = event.gamma || 0;
+                    /* Use beta for forward/back tilt (thrust): -180 to 180 degrees */
+                    /* When phone is held normally (portrait), beta ~90 degrees */
+                    /* Tilt forward (nose down) = beta < 90 = thrust forward */
+                    /* Tilt back (nose up) = beta > 90 = brake */
+                    var beta = event.beta || 0;
+
+                    /* Normalize steering to -1 to 1 range */
+                    var steer = gamma / 45;  /* 45 degree max tilt for full turn */
+                    if (Math.abs(steer) < 0.15) steer = 0;  /* Dead zone */
+                    if (steer > 1) steer = 1;
+                    if (steer < -1) steer = -1;
+
+                    /* Normalize thrust: beta around 60-90 is neutral (holding phone comfortably) */
+                    /* Tilt forward (beta < 60) = thrust, tilt back (beta > 90) = brake */
+                    var thrust = 0;
+                    var neutralBeta = 75;  /* Neutral position when holding phone */
+                    var betaDiff = neutralBeta - beta;  /* Positive = tilted forward */
+                    thrust = betaDiff / 30;  /* 30 degree range for full thrust */
+                    if (Math.abs(thrust) < 0.2) thrust = 0;  /* Dead zone */
+                    if (thrust > 1) thrust = 1;
+                    if (thrust < -1) thrust = -1;
+
+                    /* Store for display */
+                    tiltAlpha = steer;
+
+                    /* Send both tilt values to game via Emscripten */
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_tilt_input) {
+                        Module._handle_tilt_input(steer, thrust);
+                    }
+
+                    /* Update tilt indicator if visible */
+                    var indicator = document.getElementById('tilt-indicator');
+                    if (indicator) {
+                        var steerDir = steer > 0.15 ? 'Right' : (steer < -0.15 ? 'Left' : 'Center');
+                        var thrustDir = thrust > 0.2 ? 'Thrust' : (thrust < -0.2 ? 'Brake' : 'Idle');
+                        indicator.textContent = steerDir + ' | ' + thrustDir;
+                    }
+                }
+            }, true);
+        }
+
+        /* Touch-to-cursor for menu (tap to move cursor) */
+        canvas.addEventListener('touchstart', function(e) {
+            if (!window.gameStarted) return;  /* Only after game starts */
+
+            var touch = e.touches[0];
+            var rect = canvas.getBoundingClientRect();
+            var scaleX = 1280 / rect.width;  /* Canvas internal resolution */
+            var scaleY = 800 / rect.height;
+
+            var touchX = (touch.clientX - rect.left) * scaleX;
+            var touchY = (touch.clientY - rect.top) * scaleY;
+
+            /* Send touch coordinates to game for menu cursor */
+            if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_touch_cursor) {
+                Module._handle_touch_cursor(touchX, touchY, 1);  /* 1 = touch down */
+            }
+
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', function(e) {
+            if (!window.gameStarted) return;
+
+            if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_touch_cursor) {
+                Module._handle_touch_cursor(0, 0, 0);  /* 0 = touch up */
+            }
+
+            e.preventDefault();
+        }, { passive: false });
+
+        /* Virtual button handlers */
+        function setupMobileButtons() {
+            var buttons = {
+                'btn-fire': { key: 88, name: 'X' },        /* X key */
+                'btn-nuke': { key: 32, name: 'Space' },    /* Space key */
+                'btn-strafe-left': { key: 90, name: 'Z' }, /* Z key */
+                'btn-strafe-right': { key: 67, name: 'C' },/* C key */
+                'btn-thrust-up': { key: 38, name: 'Up' },  /* Up arrow */
+                'btn-thrust-down': { key: 40, name: 'Down' } /* Down arrow */
+            };
+
+            Object.keys(buttons).forEach(function(btnId) {
+                var btn = document.getElementById(btnId);
+                var info = buttons[btnId];
+
+                btn.addEventListener('touchstart', function(e) {
+                    console.log('Mobile button pressed:', info.name);
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
+                        Module._handle_virtual_key(info.key, 1);  /* 1 = key down */
+                    }
+                    e.preventDefault();
+                }, { passive: false });
+
+                btn.addEventListener('touchend', function(e) {
+                    console.log('Mobile button released:', info.name);
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
+                        Module._handle_virtual_key(info.key, 0);  /* 0 = key up */
+                    }
+                    e.preventDefault();
+                }, { passive: false });
+            });
+        }
+
+        /* Populate controls legend based on device type */
+        function populateControls() {
+            var controlsList = document.getElementById('controls-list');
+            if (!controlsList) return;
+
+            var html = '';
+            if (isTouchDevice) {
+                /* Mobile controls - tilt-based */
+                html = '<li><span class="key">Tilt L/R</span> Steer ship</li>' +
+                       '<li><span class="key">Tilt Fwd/Back</span> Thrust/Brake</li>' +
+                       '<li><span class="key">◄ ►</span> Strafe (left thumb)</li>' +
+                       '<li><span class="key">FIRE</span> Shoot (right thumb)</li>' +
+                       '<li><span class="key">NUKE</span> Launch nuke</li>';
+            } else {
+                /* Desktop controls - compact two-column */
+                html = '<li><span class="key">Arrow Keys</span> Steer</li>' +
+                       '<li><span class="key">X</span> Fire</li>' +
+                       '<li><span class="key">Up Arrow</span> Thrust</li>' +
+                       '<li><span class="key">Space</span> Nuke</li>' +
+                       '<li><span class="key">Down Arrow</span> Brake</li>' +
+                       '<li><span class="key">ESC</span> Menu</li>' +
+                       '<li><span class="key">Z / C</span> Strafe L/R</li>';
+            }
+            controlsList.innerHTML = html;
+        }
+
+        /* Initialize mobile controls if touch device */
+        if (isTouchDevice) {
+            console.log('Touch device detected - enabling mobile controls');
+
+            /* Show mobile controls when game starts */
+            canvas.addEventListener('click', function() {
+                if (!window.gameStarted) return;
+
+                /* Activate mobile controls */
+                mobileControls.classList.add('active');
+
+                /* Request orientation permission */
+                if (!tiltPermissionGranted) {
+                    requestOrientationPermission();
+                }
+            });
+
+            /* Setup virtual buttons */
+            setupMobileButtons();
+        }
+
+        /* Populate controls on load */
+        populateControls();
+    </script>
+
+    <script type='text/javascript'>
+        /* Start game on overlay click */
+        document.getElementById('start-overlay').addEventListener('click', function() {
+            if (window.gameStarted) return;
+            window.gameStarted = true;
+            console.log('User clicked start - game starting...');
+
+            /* Hide overlay */
+            this.classList.add('hidden');
+
+            /* Focus canvas for keyboard */
+            document.getElementById('canvas').focus();
+            document.getElementById('canvas').classList.add('game-active');
+
+            /* Resume audio context if available */
+            if (typeof SDL2 !== 'undefined' && SDL2.audioContext && SDL2.audioContext.state === 'suspended') {
+                SDL2.audioContext.resume().then(function() {
+                    console.log('Audio context resumed');
+                });
+            }
+        });
+    </script>
+
+    {{{ SCRIPT }}}
+</body>
+</html>

@@ -1,0 +1,76 @@
+# Makefile for The Alan Parsons Project (Emscripten/WebAssembly)
+# Converts C version to WASM for browser deployment
+
+CC = emcc
+# NOTE: Using -std=gnu99 instead of -std=c99 because EM_ASM requires GNU extensions
+CFLAGS = -Wall -std=gnu99 -Iinclude_c
+EMFLAGS = -s USE_SDL=2 \
+          -s USE_SDL_MIXER=2 \
+          -s SDL2_MIXER_FORMATS='["ogg","wav"]' \
+          -s ALLOW_MEMORY_GROWTH=1 \
+          -s INITIAL_MEMORY=268435456 \
+          -s ASYNCIFY \
+          -s EXPORTED_FUNCTIONS='["_main","_RestartGame","_handle_virtual_key","_handle_tilt_input","_handle_touch_cursor"]' \
+          -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
+          --shell-file shell.html
+
+SRC_DIR = source_c
+INC_DIR = include_c
+BUILD_DIR = wasm_build
+
+SOURCES = $(SRC_DIR)/main.c \
+          $(SRC_DIR)/sdl_wrapper.c \
+          $(SRC_DIR)/input.c \
+          $(SRC_DIR)/rand.c \
+          $(SRC_DIR)/sse_mem.c \
+          $(SRC_DIR)/player.c \
+          $(SRC_DIR)/mapeng.c \
+          $(SRC_DIR)/ppe.c \
+          $(SRC_DIR)/enemy.c \
+          $(SRC_DIR)/ai.c \
+          $(SRC_DIR)/menu.c
+
+TARGET = $(BUILD_DIR)/game.html
+
+# Default target
+all: $(BUILD_DIR) $(TARGET)
+
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# Build WASM version with compressed data (using pako)
+$(TARGET): $(SOURCES)
+	@echo "Creating asset package..."
+	python3 $$(em-config EMSCRIPTEN_ROOT)/tools/file_packager.py \
+		$(BUILD_DIR)/game.data \
+		--preload data@/data \
+		--preload sound@/sound \
+		--js-output=$(BUILD_DIR)/game.data.js \
+		--use-preload-cache
+	@echo "Compiling WASM..."
+	$(CC) $(CFLAGS) $(EMFLAGS) $(SOURCES) \
+		--pre-js $(BUILD_DIR)/game.data.js \
+		-s FORCE_FILESYSTEM=1 \
+		-o $(TARGET)
+	@echo "Compressing game.data with gzip..."
+	gzip -9 -c $(BUILD_DIR)/game.data > $(BUILD_DIR)/game.data.gz
+	@echo "Compressed: $$(ls -lh $(BUILD_DIR)/game.data.gz | awk '{print $$5}')"
+	@echo "Patching loader to use compressed data..."
+	chmod +x patch_loader.sh
+	./patch_loader.sh
+	@echo "Removing uncompressed game.data (keeping .gz only)..."
+	rm -f $(BUILD_DIR)/game.data
+	@echo "Build complete! Compressed from 213MB to 32MB (85% reduction)"
+
+# Clean build files
+clean:
+	rm -rf $(BUILD_DIR)
+
+# Run local server for testing
+serve: $(TARGET)
+	@echo "Starting local server on http://localhost:8000"
+	@echo "Open http://localhost:8000/wasm_build/game.html in your browser"
+	python3 -m http.server 8000
+
+.PHONY: all clean serve

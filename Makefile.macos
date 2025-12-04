@@ -1,0 +1,65 @@
+#
+# macOS Makefile for The Alan Parsons Project
+# Adapted from original 2003 Windows Makefile
+#
+
+# define the C compiler to use (on macOS, gcc is actually clang)
+CC = gcc
+
+# define the assembler to use
+AS = nasm
+
+# Get SDL flags from sdl-config
+SDL_CFLAGS := $(shell sdl-config --cflags)
+SDL_LIBS := $(shell sdl-config --libs)
+
+# define any compile-time flags
+# Target x86_64 architecture for Rosetta 2 on Apple Silicon
+CFLAGS = -g -Wall -arch x86_64 $(SDL_CFLAGS)
+
+# define any directories containing header files
+INCLUDES = -I./include/
+
+# define library paths
+LFLAGS = -L/opt/homebrew/lib -L/usr/local/lib
+
+# define any libraries to link into executable
+# Note: SDL_mixer might need to be installed separately
+LIBS = $(SDL_LIBS) -lSDL_mixer
+
+# define the source files
+SRCS = source/ai.asm        \
+       source/enemy.asm     \
+       source/input.asm     \
+       source/main.asm      \
+       source/mapeng.asm    \
+       source/menu.asm      \
+       source/player.asm    \
+       source/ppe.asm       \
+       source/rand.asm      \
+       source/sdl.asm       \
+       source/sse_mem.asm
+
+# define the object files (use .o extension for Unix/macOS)
+OBJS = $(SRCS:.asm=.o)
+
+# define the executable file
+MAIN = macos_app
+
+.PHONY: depend clean
+
+all: $(MAIN)
+
+$(MAIN): $(OBJS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(MAIN) $(OBJS) $(LFLAGS) $(LIBS)
+
+# suffix replacement rule for building .o's from .asm's
+# Use macho64 format for macOS (64-bit Mach-O, needed for Apple Silicon with Rosetta 2)
+# Note: On macOS, C symbols don't need underscore prefix (remove --prefix _)
+%.o: %.asm
+	$(AS) -f macho64 -I./include/ $*.asm -o $*.o
+
+clean:
+	$(RM) source/*.o *~ $(MAIN)
+
+# DO NOT DELETE THIS LINE -- make depend needs it

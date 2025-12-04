@@ -1,0 +1,21 @@
+# Build artifacts
+*.o
+*.exe
+alan_parsons_c
+alan_parsons
+
+# WASM build output
+wasm_build/
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Debug
+*.dSYM/

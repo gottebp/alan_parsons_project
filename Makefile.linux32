@@ -1,0 +1,56 @@
+#
+# Linux i386 Makefile for The Alan Parsons Project
+# For cross-compilation on macOS for 32-bit Linux
+#
+
+# define the assembler to use
+AS = nasm
+
+# Get SDL flags (we'll use Linux values)
+# Note: You'd need SDL dev packages for 32-bit Linux
+
+# define any compile-time flags for 32-bit Linux
+CFLAGS = -m32 -g -Wall -I/usr/include/SDL -D_REENTRANT
+
+# define any directories containing header files
+INCLUDES = -I./include/
+
+# define library paths
+LFLAGS = -m32 -L/usr/lib32 -L/usr/lib/i386-linux-gnu
+
+# define any libraries to link into executable
+LIBS = -lSDL -lSDL_mixer -lpthread
+
+# define the source files
+SRCS = source/ai.asm        \
+       source/enemy.asm     \
+       source/input.asm     \
+       source/main.asm      \
+       source/mapeng.asm    \
+       source/menu.asm      \
+       source/player.asm    \
+       source/ppe.asm       \
+       source/rand.asm      \
+       source/sdl.asm       \
+       source/sse_mem.asm
+
+# define the object files
+OBJS = $(SRCS:.asm=.o)
+
+# define the executable file
+MAIN = linux32_app
+
+.PHONY: clean
+
+all: $(MAIN)
+
+$(MAIN): $(OBJS)
+	gcc $(CFLAGS) $(INCLUDES) -o $(MAIN) $(OBJS) $(LFLAGS) $(LIBS)
+
+# suffix replacement rule for building .o's from .asm's
+# Use elf32 format for 32-bit Linux
+%.o: %.asm
+	$(AS) -f elf32 -I./include/ $*.asm -o $*.o
+
+clean:
+	$(RM) source/*.o *~ $(MAIN)
