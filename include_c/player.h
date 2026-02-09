@@ -4,50 +4,59 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-/* Player state variables */
-extern int intPlayerX;
-extern int intPlayerY;
-extern float fltPlayerX;
-extern float fltPlayerY;
-extern float fltPlayerSpeed;
-extern float fltPlayerStrafeSpeed;
-extern int8_t intbPlayerAngle;
-extern int8_t intbPlayerTurnDir;
-extern int intPlayerHealth;
-extern int intPlayerWeaponsLevel;
+/*============================================================================
+ * LEGACY PLAYER MODULE
+ *
+ * This header provides backwards compatibility for legacy code.
+ * The new architecture uses:
+ *   - game/game.c: player_update(), player_fire_*()
+ *   - game/render.c: render_player()
+ *   - game/sprites.c: sprite loading
+ *============================================================================*/
 
-/* Player ship sprites */
+/*============================================================================
+ * PLAYER SPRITES (defined in game/sprites.c, used by render.c)
+ *============================================================================*/
 extern uint32_t* PlayerShipOff;
 extern uint32_t* PlayerShipOffL;
 extern uint32_t* PlayerShipOffR;
 
-/* Player physics constants */
-extern float fltPlayerAccel;
-extern float fltPlayerFriction;
-extern float fltPlayerMaxSpeed;
-extern float fltPlayerMinSpeed;
+/*============================================================================
+ * PLAYER STATE (defined in player.c, used by bridge for sync)
+ *============================================================================*/
+extern int intPlayerX, intPlayerY;
+extern float fltPlayerX, fltPlayerY;
+extern float fltPlayerSpeed, fltPlayerStrafeSpeed;
+extern int8_t intbPlayerAngle, intbPlayerTurnDir;
+extern int intPlayerHealth;
+extern int intPlayerWeaponsLevel;  /* Used by main.c for save/load */
+
+/* Physics constants */
+extern float fltPlayerAccel, fltPlayerFriction;
+extern float fltPlayerMaxSpeed, fltPlayerMinSpeed;
 extern float fltPlayerMass;
 extern float fltPlayerStrafeFriction;
-extern float fltPlayerMaxStrafeSpeed;
-extern float fltPlayerMinStrafeSpeed;
+extern float fltPlayerMaxStrafeSpeed, fltPlayerMinStrafeSpeed;
 
-/* Player collision points */
+/* Collision points */
 extern float fltPlayerNoseX, fltPlayerNoseY;
 extern float fltPlayerTailX, fltPlayerTailY;
 extern int intPlayerNoseX, intPlayerNoseY;
 extern int intPlayerTailX, intPlayerTailY;
 
-/* Functions */
+/* Angular momentum (for bridge) */
+extern float fltPlayerAngularVel;
+extern int intPlayerInvulnFrames;
+
+/*============================================================================
+ * LIFECYCLE (no-ops, kept for compatibility)
+ *============================================================================*/
 void InitPlayer(void);
 void DestroyPlayer(void);
-void UpdatePlayer(void);
-void RenderPlayer(void);
-void FirePlayerWeapons(void);
-void FirePlayerMainThrusters(void);
-void FirePlayerLeftThrusters(void);
-void FirePlayerRightThrusters(void);
-void DrawPlayerHealth(void);
-void DetectPlayerCollisions(void);
-void LoadRaw(const char* filename, void* buffer, size_t size);  /* Assembly returns void (no eax set) */
+
+/*============================================================================
+ * UTILITY (defined in game/sprites.c)
+ *============================================================================*/
+void LoadRaw(const char* filename, void* buffer, size_t size);
 
 #endif /* _PLAYER_H_ */

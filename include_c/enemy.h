@@ -4,21 +4,34 @@
 #include <stdint.h>
 #include "defs.h"
 
-/* Enemy array - 100 enemies max */
-extern Enemy Enemies[100];
+/*============================================================================
+ * LEGACY ENEMY MODULE
+ *
+ * This header provides backwards compatibility for legacy code.
+ * The new architecture uses:
+ *   - game/game.c: enemies_update(), waves_init(), waves_update()
+ *   - game/render.c: render_enemies()
+ *   - game/sprites.c: sprite loading
+ *============================================================================*/
+
+/*============================================================================
+ * ENEMY SPRITES (defined in game/sprites.c, used by render.c)
+ *============================================================================*/
 extern uint32_t* SmallEnemyImageData;
 extern uint32_t* BossImageData;
 
-/* Enemy spawn timing */
+/*============================================================================
+ * ENEMY STATE (defined in enemy.c, used by bridge for sync)
+ *============================================================================*/
+extern Enemy Enemies[100];
 extern uint32_t SpawnFrames[18];
 extern uint32_t FrameNum;
 extern uint32_t NextWaveNumber;
 
-/* Functions */
+/*============================================================================
+ * LIFECYCLE (no-ops, kept for compatibility)
+ *============================================================================*/
 void LoadEnemyData(void);
 void DestroyEnemyData(void);
-void InitializeEnemies(int map_id);
-void UpdateEnemies(void);
-void RenderEnemies(void);
 
 #endif /* _ENEMY_H_ */

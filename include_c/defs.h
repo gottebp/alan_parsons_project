@@ -32,6 +32,9 @@
 
 #define SHAKE_FACTOR            40
 
+/* Enemy Constants */
+#define MAX_ENEMIES             100
+
 /* Particle System Constants */
 #define MAX_PARTICLES           10000
 #define SMALL_PARTICLE_WIDTH    32
@@ -88,9 +91,22 @@
 #define CURSOR_WIDTH            64
 #define CURSOR_HEIGHT           64
 
+/* Camera Constants */
+#define CAMERA_FREEDOM_RADIUS   150.0f  /* Player can move this far from camera center before camera follows */
+
+/* Body Collision Constants */
+#define PLAYER_BODY_RADIUS      40.0f   /* Actual body collision radius */
+#define SMALL_ENEMY_BODY_RADIUS 50.0f   /* Small enemy collision radius */
+#define BOSS_BODY_RADIUS        114.0f  /* Boss collision radius */
+#define BODY_COLLISION_DAMAGE_SCALE  0.5f   /* Damage = relative_speed * scale */
+#define BODY_COLLISION_MIN_DAMAGE    5      /* Minimum damage from any collision */
+#define BODY_COLLISION_KNOCKBACK     8.0f   /* Knockback velocity multiplier */
+#define PLAYER_INVULN_FRAMES         30     /* Frames of invulnerability after body hit */
+#define ENEMY_INVULN_FRAMES          15     /* Shorter for enemies */
+
 /* Structure Definitions */
 
-/* Enemy Structure - 40 bytes */
+/* Enemy Structure */
 typedef struct {
     uint32_t enemy_type;
     float enemy_x_float;
@@ -98,6 +114,7 @@ typedef struct {
     float enemy_x_vel_float;
     float enemy_y_vel_float;
     float enemy_mass;
+    float enemy_angular_vel;  /* Angular velocity for smooth turning */
     uint8_t enemy_angle;
     uint8_t enemy_size;
     int8_t enemy_active;  /* Can be -1 (inactive) or 1 (active) */
@@ -105,6 +122,7 @@ typedef struct {
     int32_t enemy_x_int;   /* SIGNED - used with signed comparisons (jl/jg) in assembly */
     int32_t enemy_y_int;   /* SIGNED - used with signed comparisons (jl/jg) in assembly */
     int32_t enemy_health;  /* SIGNED - can go negative when killed */
+    int32_t enemy_invuln_frames;  /* Frames of invulnerability after body collision */
 } Enemy;
 
 /* NOTE: Particle structure is defined in ppe.h as PARTICLE (46 bytes) */

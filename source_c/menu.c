@@ -22,8 +22,11 @@
 int MenuResult = 0;
 uint8_t IsMenuRunning = 0;
 
-static uint32_t* menu_background = NULL;
-static uint32_t* mouse_cursor = NULL;
+/* Menu assets - exported for menu_new.c */
+uint32_t* menu_background = NULL;
+uint32_t* mouse_cursor = NULL;
+
+/* Legacy masks - kept for legacy RunMenu */
 static uint32_t darkness_mask[143 * 122];
 static uint32_t random_mask[143 * 122];
 
@@ -114,6 +117,7 @@ static void make_random_mask(void) {
  * Run menu and handle input
  */
 int RunMenu(int game_running) {
+    (void)game_running;  /* Currently unused - may be used for resume functionality */
     if (!IsMenuRunning) {
         IsMenuRunning = 1;
         Mix_FadeOutMusic(100);

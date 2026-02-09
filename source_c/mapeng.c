@@ -18,6 +18,12 @@ uint32_t* MapPadTop = NULL;
 uint32_t* MapPadBottom = NULL;
 int intShakeMap = 0;
 
+/* Camera position (for bridge compatibility - equals player position in legacy mode) */
+float fltCameraX = 0.0f;
+float fltCameraY = 0.0f;
+int intCameraX = 0;
+int intCameraY = 0;
+
 /*
  * Initialize map engine
  */

@@ -151,12 +151,14 @@ int LoadBMP(uint32_t* buffer, const char* filename) {
 }
 
 /*
- * Alpha blend two pixels
+ * Alpha blend two pixels (inline version for external callers)
  * Matches assembly implementation in macros.inc ComputeAlpha macro
- * Uses divide by 256 (shift right 8) and rounding factor of 128
  */
 uint32_t ComputeAlpha(uint32_t src, uint32_t dst) {
     uint8_t src_a = (src >> 24) & 0xFF;
+    if (src_a == 0) return dst;  /* Fully transparent */
+    if (src_a == 255) return src | 0xFF000000;  /* Fully opaque */
+
     uint8_t src_r = (src >> 16) & 0xFF;
     uint8_t src_g = (src >> 8) & 0xFF;
     uint8_t src_b = src & 0xFF;
@@ -165,22 +167,19 @@ uint32_t ComputeAlpha(uint32_t src, uint32_t dst) {
     uint8_t dst_g = (dst >> 8) & 0xFF;
     uint8_t dst_b = dst & 0xFF;
 
-    /* Use 16-bit intermediates to prevent overflow, add rounding factor 128, divide by 256
-     * This matches assembly: (src * alpha + dst * (255-alpha) + 128) >> 8
-     */
-    uint16_t out_r = ((uint16_t)src_r * src_a + (uint16_t)dst_r * (255 - src_a) + 128) >> 8;
-    uint16_t out_g = ((uint16_t)src_g * src_a + (uint16_t)dst_g * (255 - src_a) + 128) >> 8;
-    uint16_t out_b = ((uint16_t)src_b * src_a + (uint16_t)dst_b * (255 - src_a) + 128) >> 8;
+    uint8_t inv_a = 255 - src_a;
+    uint16_t out_r = ((uint16_t)src_r * src_a + (uint16_t)dst_r * inv_a + 128) >> 8;
+    uint16_t out_g = ((uint16_t)src_g * src_a + (uint16_t)dst_g * inv_a + 128) >> 8;
+    uint16_t out_b = ((uint16_t)src_b * src_a + (uint16_t)dst_b * inv_a + 128) >> 8;
 
     return 0xFF000000 | (out_r << 16) | (out_g << 8) | out_b;
 }
 
 /*
- * Alpha blit with clipping
+ * Alpha blit with clipping - optimized version
  */
 void AlphaBlit(int x, int y, uint32_t* src, int src_width, int src_height) {
     int orig_width = src_width;
-    (void)src_height;  /* Suppress warning - not needed in current implementation */
 
     /* Clip left */
     if (x < 0) {
@@ -210,13 +209,35 @@ void AlphaBlit(int x, int y, uint32_t* src, int src_width, int src_height) {
         if (src_height <= 0) return;
     }
 
-    /* Blit with alpha blending */
+    /* Blit with alpha blending - inlined for performance */
+    uint32_t* dst_row = ScreenOff + y * SCREEN_WIDTH + x;
+    uint32_t* src_row = src;
+
     for (int row = 0; row < src_height; row++) {
         for (int col = 0; col < src_width; col++) {
-            int dst_idx = (y + row) * SCREEN_WIDTH + (x + col);
-            int src_idx = row * orig_width + col;
-            ScreenOff[dst_idx] = ComputeAlpha(src[src_idx], ScreenOff[dst_idx]);
+            uint32_t spixel = src_row[col];
+            uint8_t src_a = spixel >> 24;
+
+            /* Skip fully transparent pixels (common in particle sprites) */
+            if (src_a == 0) continue;
+
+            if (src_a == 255) {
+                /* Fully opaque - direct copy */
+                dst_row[col] = spixel | 0xFF000000;
+            } else {
+                /* Alpha blend */
+                uint32_t dpixel = dst_row[col];
+                uint8_t inv_a = 255 - src_a;
+
+                uint8_t out_r = (((spixel >> 16) & 0xFF) * src_a + ((dpixel >> 16) & 0xFF) * inv_a + 128) >> 8;
+                uint8_t out_g = (((spixel >> 8) & 0xFF) * src_a + ((dpixel >> 8) & 0xFF) * inv_a + 128) >> 8;
+                uint8_t out_b = ((spixel & 0xFF) * src_a + (dpixel & 0xFF) * inv_a + 128) >> 8;
+
+                dst_row[col] = 0xFF000000 | (out_r << 16) | (out_g << 8) | out_b;
+            }
         }
+        dst_row += SCREEN_WIDTH;
+        src_row += orig_width;
     }
 }
 
@@ -227,6 +248,40 @@ void UpdateScreen(void) {
     SDL_UpdateTexture(screen_texture, NULL, ScreenOff, SCREEN_WIDTH * sizeof(uint32_t));
     SDL_RenderClear(screen_renderer);
     SDL_RenderCopy(screen_renderer, screen_texture, NULL, NULL);
+    SDL_RenderPresent(screen_renderer);
+}
+
+/*
+ * Update screen with hardware-accelerated particles
+ * Uploads software buffer, then calls RenderParticlesHW, then presents
+ */
+void UpdateScreenWithHWParticles(void) {
+    extern void RenderParticlesHW(int layer);
+
+    SDL_UpdateTexture(screen_texture, NULL, ScreenOff, SCREEN_WIDTH * sizeof(uint32_t));
+    SDL_RenderClear(screen_renderer);
+    SDL_RenderCopy(screen_renderer, screen_texture, NULL, NULL);
+
+    /* Render particles using hardware acceleration */
+    RenderParticlesHW(0);
+
+    SDL_RenderPresent(screen_renderer);
+}
+
+/*
+ * Update screen with hardware-accelerated particles using explicit camera position
+ * Use this when rendering from the new Game struct to avoid needing global sync
+ */
+void UpdateScreenWithHWParticles_Camera(int cam_x, int cam_y) {
+    extern void RenderParticlesHW_Camera(int layer, int cam_x, int cam_y);
+
+    SDL_UpdateTexture(screen_texture, NULL, ScreenOff, SCREEN_WIDTH * sizeof(uint32_t));
+    SDL_RenderClear(screen_renderer);
+    SDL_RenderCopy(screen_renderer, screen_texture, NULL, NULL);
+
+    /* Render particles using hardware acceleration with explicit camera */
+    RenderParticlesHW_Camera(0, cam_x, cam_y);
+
     SDL_RenderPresent(screen_renderer);
 }
 

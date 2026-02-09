@@ -20,6 +20,8 @@ void DestroyGraphics(void);
 int LoadBMP(uint32_t* buffer, const char* filename);
 void AlphaBlit(int x, int y, uint32_t* src, int src_width, int src_height);
 void UpdateScreen(void);
+void UpdateScreenWithHWParticles(void);  /* HW-accelerated particle rendering */
+void UpdateScreenWithHWParticles_Camera(int cam_x, int cam_y);  /* Camera-parameterized version */
 
 /* Alpha blending */
 uint32_t ComputeAlpha(uint32_t src, uint32_t dst);

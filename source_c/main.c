@@ -21,6 +21,8 @@
 #include "enemy.h"
 #include "ai.h"
 #include "menu.h"
+#include "game/bridge_opaque.h"  /* New Game struct bridge - for incremental migration */
+#include "game/sprites.h"        /* Consolidated sprite loading */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,24 +32,43 @@
 #include <emscripten.h>
 #endif
 
-/* Game state globals */
-int GameState = 0;  /* Global - used by enemy.c for win/lose checking */
-static int activate_menu = 0;
+/*============================================================================
+ * APP CONTEXT
+ * Platform-level concerns wrapped in a single struct.
+ * Game logic lives in the Game struct; App owns the Game.
+ *============================================================================*/
+typedef struct {
+    Game* game;             /* The game state */
+    int running;            /* 1 = running, 0 = should exit */
+    uint32_t prev_tick;     /* Previous frame tick */
+    uint32_t curr_tick;     /* Current frame tick */
+    int menu_result;        /* Result from last menu */
+
+    /* Level state (still being migrated to Game) */
+    int active_level;
+    int nukes_remaining;
+    int nuke_wait_counter;
+    int victory_defeat_timer;
+    int ending_delay_timer;
+    int is_ending;
+} App;
+
+static App app = {0};
+
+/* Game state globals - exported for legacy modules */
+int level_is_loaded = 0;  /* 0 = no level (menu only), 1 = level loaded */
 uint8_t game_turnout = PLAYER_NORMAL;  /* Exported for player module */
 int game_level = 0;  /* Exported for menu module */
-static int active_level = 0;
-static int nukes_remaining = 0;
 static int num_starting_nukes = NUM_NUKES;
-static int nuke_wait_counter = 0;
-static int victory_defeat_timer = 0;  /* Auto-advance after 7 seconds on victory/defeat */
-
-/* Timing */
-static uint32_t current_tick_count = 0;
-static uint32_t prev_tick_count = 0;
 
 /* Lookup tables */
 float SIN_LOOK[256];
 float COS_LOOK[256];
+
+/* External variables from player.c and mapeng.c for bridge compatibility */
+extern float fltPlayerAngularVel;
+extern float fltCameraX, fltCameraY;
+extern int intCameraX, intCameraY;
 
 /* File paths for data files */
 char* SmallParticleFile = "./data/small_flares.bmp";
@@ -67,10 +88,10 @@ static int MapMidY = (MAP_HEIGHT / 2) - (SCREEN_HEIGHT / 2);
 
 /* Image buffers */
 static uint32_t* title_screen = NULL;
-static uint32_t* victory_screen = NULL;
-static uint32_t* defeat_screen = NULL;
+uint32_t* victory_screen = NULL;  /* Exported for render_bridge */
+uint32_t* defeat_screen = NULL;   /* Exported for render_bridge */
 static uint32_t* story_clips = NULL;
-static uint32_t nuke_img[32 * 32];
+uint32_t nuke_img[32 * 32];       /* Exported for render_bridge */
 
 /* Sound effects */
 static Mix_Chunk* snd_effect_engines = NULL;
@@ -84,21 +105,16 @@ static Mix_Music* snd_track = NULL;
 int snd_engines_counter = 0;
 int snd_weapon_counter = 0;
 
-/* Game ending state */
-static int is_ending_running = 0;
-static int ending_delay_timer = 0;
+/* Game ending state now in App struct */
 
 /* Forward declarations */
 void initialize_game_data(void);
 void destroy_game_data(void);
 void run_game(void);
-void process_input(void);
 void load_level(int level_id);
 void display_title_screen(void);
 void init_trig_tables(void);
-void render_minimap(void);
 void run_ending_sequence(void);
-void draw_minimap_object(int x, int y, uint32_t color1, uint32_t color2, int is_boss);
 void music_track_finished_callback(void);
 #ifdef __EMSCRIPTEN__
 void RestartGame(void);
@@ -208,8 +224,7 @@ void initialize_game_data(void) {
     Rand(); /* Consume one value like original */
 
     /* Initialize game state - mirrors assembly lines 471-481 */
-    activate_menu = 1;
-    GameState = 0;
+    level_is_loaded = 0;
 
     /* Load saved game data - mirrors assembly lines 474-481 */
     /* EMSCRIPTEN NOTE: Uses localStorage for reliable browser persistence */
@@ -256,9 +271,10 @@ void initialize_game_data(void) {
 
     /* Initialize subsystems */
     InitMenu();
-    InitPlayer();
+    sprites_init();        /* Load all sprites (player, enemies) */
+    InitPlayer();          /* Legacy - now no-op, kept for compatibility */
     InitParticleEngine();
-    LoadEnemyData();
+    LoadEnemyData();       /* Legacy - now no-op, kept for compatibility */
 
     /* Set initial player position */
     fltPlayerX = (float)MapMidX;
@@ -268,7 +284,14 @@ void initialize_game_data(void) {
     intbPlayerAngle = PLAYER_START_ANGLE;
     fltPlayerSpeed = 0.0f;
     fltPlayerStrafeSpeed = 0.0f;
+    fltPlayerAngularVel = 0.0f;
     intPlayerHealth = MAXPLAYERHEALTH;
+
+    /* Initialize camera to player position */
+    fltCameraX = fltPlayerX;
+    fltCameraY = fltPlayerY;
+    intCameraX = intPlayerX;
+    intCameraY = intPlayerY;
 
     /* Initialize trig lookup tables */
     init_trig_tables();
@@ -352,8 +375,15 @@ void initialize_game_data(void) {
 
     /* Initialize remaining state */
     /* NOTE: game_level is NOT reset here - it was loaded from file above (or stayed at 0) */
-    active_level = 0;
-    nukes_remaining = num_starting_nukes;
+    app.active_level = 0;
+    app.nukes_remaining = num_starting_nukes;
+
+    /* Create new Game struct for incremental migration */
+    app.game = bridge_create_game();
+    if (app.game) {
+        bridge_seed_random(app.game, 0xAE33);
+        bridge_request_menu(app.game);  /* Start with menu */
+    }
 
     printf("Game initialized - game_level=%d, weapons=%d\n", game_level, intPlayerWeaponsLevel);
 }
@@ -368,9 +398,10 @@ void destroy_game_data(void) {
 
     /* Free allocated resources */
     DestroyParticleEngine();
-    DestroyPlayer();
+    DestroyPlayer();       /* Legacy - now no-op */
     DestroyMenu();
-    DestroyEnemyData();
+    DestroyEnemyData();    /* Legacy - now no-op */
+    sprites_destroy();     /* Free all sprites */
 
     /* Free image buffers */
     if (story_clips) free(story_clips);
@@ -395,6 +426,12 @@ void destroy_game_data(void) {
     /* Cleanup SDL_mixer */
     Mix_Quit();
 
+    /* Destroy new Game struct */
+    if (app.game) {
+        bridge_destroy_game(app.game);
+        app.game = NULL;
+    }
+
     printf("Game data destroyed\n");
 }
 
@@ -409,60 +446,63 @@ void init_trig_tables(void) {
     }
 }
 
-/* Game loop state - static for Emscripten persistence between iterations */
-static int game_running = 1;
-static int game_menu_result = 0;
+/* Game loop state now in App struct */
 
 /*
  * Single iteration of game loop - called by Emscripten or native loop
  */
 void game_loop_iteration(void) {
     /* Early exit if not running */
-    if (!game_running) {
+    if (!app.running) {
         return;
     }
+
+        /* Capture frame start time */
+        app.curr_tick = SDL_GetTicks();
+
         /* Update input */
         UpdateInput();
 
         /* Check for victory/defeat auto-advance timer (7 seconds at 60 FPS = 420 frames) */
         if (game_turnout == PLAYER_WIN || game_turnout == PLAYER_DEAD) {
             /* Start timer if not already started */
-            if (victory_defeat_timer == 0) {
-                victory_defeat_timer = 420;  /* 7 seconds at 60 FPS */
+            if (app.victory_defeat_timer == 0) {
+                app.victory_defeat_timer = 420;  /* 7 seconds at 60 FPS */
             }
 
             /* Decrement timer */
-            if (victory_defeat_timer > 0) {
-                victory_defeat_timer--;
+            if (app.victory_defeat_timer > 0) {
+                app.victory_defeat_timer--;
 
                 /* Auto-activate menu after 7 seconds */
-                if (victory_defeat_timer == 0) {
-                    activate_menu = 1;
+                if (app.victory_defeat_timer == 0 && app.game) {
+                    bridge_request_menu(app.game);
                 }
             }
         }
 
         /* Check for escape key - activate menu (also advances victory/defeat screen) */
-        if (KEYBOARD[SDL_SCANCODE_ESCAPE]) {
-            activate_menu = 1;
+        if (KEYBOARD[SDL_SCANCODE_ESCAPE] && app.game) {
+            bridge_request_menu(app.game);
         }
 
         /* Check if menu should be activated */
-        if (activate_menu) {
-            activate_menu = 0;
-            victory_defeat_timer = 0;  /* Reset timer */
+        if (app.game && bridge_menu_requested(app.game)) {
+            bridge_clear_menu_request(app.game);
+            app.victory_defeat_timer = 0;  /* Reset timer */
 
-            game_menu_result = RunMenu(GameState);
+            app.menu_result = RunMenu(level_is_loaded);
+            bridge_set_menu_result(app.game, app.menu_result);
 
             /* Check if user selected a level (2-7) */
-            if (game_menu_result >= 2 && game_menu_result <= 7) {
-                load_level(game_menu_result);
+            if (app.menu_result >= 2 && app.menu_result <= 7) {
+                load_level(app.menu_result);
             }
         }
 
         /* Check if user quit from menu */
-        if (game_menu_result == 0) {
-            game_running = 0;
+        if (app.menu_result == 0) {
+            app.running = 0;
 #ifdef __EMSCRIPTEN__
             /* Stop all audio completely */
             Mix_HaltMusic();
@@ -513,7 +553,7 @@ void game_loop_iteration(void) {
 
         /* Check for quit signal */
         if (QUIT_SIGNAL) {
-            game_running = 0;
+            app.running = 0;
 #ifdef __EMSCRIPTEN__
             emscripten_cancel_main_loop();
 #endif
@@ -521,7 +561,7 @@ void game_loop_iteration(void) {
         }
 
         /* Only run game logic if a level is loaded */
-        if (GameState == 0) {
+        if (level_is_loaded == 0) {
             /* No level loaded - wait for menu input */
             /* EMSCRIPTEN NOTE: SDL_Delay handled by emscripten_set_main_loop FPS parameter */
 #ifndef __EMSCRIPTEN__
@@ -531,36 +571,51 @@ void game_loop_iteration(void) {
         }
 
         /* Decrement nuke wait counter - mirrors assembly line 357-360 */
-        if (nuke_wait_counter > 0) {
-            nuke_wait_counter--;
+        if (app.nuke_wait_counter > 0) {
+            app.nuke_wait_counter--;
         }
 
-        /* Process game input */
-        process_input();
+        /*====================================================================
+         * GAME UPDATE
+         * Uses unified Game struct and game_update() for all logic.
+         * No bridge sync needed - rendering reads directly from Game.
+         *====================================================================*/
+        if (app.game) {
+            /* Calculate actual dt from frame time */
+            float dt = (app.curr_tick > app.prev_tick)
+                     ? (float)(app.curr_tick - app.prev_tick) / 1000.0f
+                     : 1.0f / 60.0f;
 
-        /* Update game entities - mirrors assembly lines 362-366 */
-        UpdatePlayer();
-        UpdateEnemies();
-        UpdateParticles(0);
-        DetectPlayerCollisions();
+            /* Clamp dt to prevent physics explosion on lag spikes */
+            if (dt > 0.1f) dt = 0.1f;  /* Max 100ms = 10 FPS minimum */
+            if (dt < 0.001f) dt = 1.0f / 60.0f;  /* Min 1ms */
 
-        /* Check victory/defeat conditions */
+            /* Update game with input from KEYBOARD globals */
+            bridge_update_from_legacy_input(app.game, dt);
+
+            /* Check outcome */
+            int outcome = bridge_get_outcome(app.game);
+            if (outcome == 1) {
+                game_turnout = PLAYER_DEAD;
+            } else if (outcome == 2) {
+                game_turnout = PLAYER_WIN;
+            }
+        }
+
+        /* Handle victory - advance level and save progress */
         if (game_turnout == PLAYER_WIN) {
-            /* Advance level if player beat their current max level */
-            if (active_level >= game_level) {
+            if (app.active_level >= game_level) {
                 game_level++;
-                intPlayerWeaponsLevel++;
+                bridge_increment_weapons_level(app.game);
+                intPlayerWeaponsLevel = bridge_get_weapons_level(app.game);
 
                 /* Save progress */
-                /* EMSCRIPTEN NOTE: Save to localStorage for reliable browser persistence */
 #ifdef __EMSCRIPTEN__
                 EM_ASM({
                     localStorage.setItem('alan_parsons_level', $0);
                     localStorage.setItem('alan_parsons_weapons', $1);
-                    console.log('Progress saved to localStorage - Level:', $0, 'Weapons:', $1);
                 }, game_level, intPlayerWeaponsLevel);
 #else
-                /* Native build uses file-based saves */
                 FILE* fp = fopen("level.dat", "wb");
                 if (fp) {
                     fwrite(&game_level, sizeof(int), 1, fp);
@@ -570,20 +625,14 @@ void game_loop_iteration(void) {
 #endif
             }
 
-            /* Restore health */
-            intPlayerHealth = MAXPLAYERHEALTH;
-
-            /* Check if we should run ending (after beating Mordor) - mirrors assembly lines 413-425 */
-            if (active_level >= 5) {
-                ending_delay_timer--;
-                if (ending_delay_timer <= 0) {
-                    /* Run ending sequence - mirrors assembly _RunEnding lines 1619-1697 */
+            /* Run ending sequence after beating Mordor */
+            if (app.active_level >= 5) {
+                app.ending_delay_timer--;
+                if (app.ending_delay_timer <= 0) {
                     run_ending_sequence();
-
-                    /* Return to menu */
-                    activate_menu = 1;
+                    if (app.game) bridge_request_menu(app.game);
                     game_turnout = PLAYER_NORMAL;
-                    ending_delay_timer = 300;  /* Reset for next time */
+                    app.ending_delay_timer = 300;
                 }
             }
         }
@@ -591,53 +640,22 @@ void game_loop_iteration(void) {
         /* Render scene */
         sseMemset32(ScreenOff, 0x00000000, SCREEN_WIDTH * SCREEN_HEIGHT);
 
-        RenderMap();
-        RenderPlayer();
-        RenderEnemies();
-        RenderParticles(0);
-        DrawPlayerHealth();
-        render_minimap();
-
-        /* Draw nuke icons if available */
-        if (nukes_remaining > 0) {
-            for (int i = 0; i < nukes_remaining; i++) {
-                int x = SCREEN_WIDTH - 46 - (i * 34);
-                int y = 18;
-                AlphaBlit(x, y, nuke_img, 32, 32);
-            }
+        /*====================================================================
+         * RENDERING
+         * All rendering reads directly from Game struct.
+         *====================================================================*/
+        if (app.game) {
+            extern void render_frame(const Game* game);
+            extern void render_present(const Game* game);
+            render_frame(app.game);
+            render_present(app.game);
         }
-
-        /* Show victory screen if player won */
-        if (game_turnout == PLAYER_WIN && victory_screen) {
-            AlphaBlit(
-                SCREEN_WIDTH / 2 - 460 / 2,
-                SCREEN_HEIGHT / 2 - 345 / 2,
-                victory_screen,
-                460,
-                345
-            );
-        }
-
-        /* Show defeat screen if player died */
-        if (game_turnout == PLAYER_DEAD && defeat_screen) {
-            AlphaBlit(
-                SCREEN_WIDTH / 2 - 460 / 2,
-                SCREEN_HEIGHT / 2 - 345 / 2,
-                defeat_screen,
-                460,
-                345
-            );
-        }
-
-        /* Update screen */
-        UpdateScreen();
 
         /* EMSCRIPTEN NOTE: Frame rate limiting handled by emscripten_set_main_loop FPS parameter
          * Native builds use manual timing with SDL_Delay and busy-wait for precision */
 #ifndef __EMSCRIPTEN__
         /* Frame rate limiting - sleep to yield CPU to OS */
-        current_tick_count = SDL_GetTicks();
-        uint32_t frame_time = current_tick_count - prev_tick_count;
+        uint32_t frame_time = SDL_GetTicks() - app.curr_tick;
         uint32_t target_frame_time = 1000 / 60;  /* ~16.67ms for 60 FPS */
 
         if (frame_time < target_frame_time) {
@@ -647,16 +665,17 @@ void game_loop_iteration(void) {
                 SDL_Delay(delay - 1);  /* Sleep all but 1ms */
             }
             /* Final busy-wait for precision on the last millisecond */
-            do {
-                current_tick_count = SDL_GetTicks();
-            } while ((current_tick_count - prev_tick_count) < target_frame_time);
+            while ((SDL_GetTicks() - app.curr_tick) < target_frame_time) {
+                /* Spin */
+            }
         }
-        prev_tick_count = current_tick_count;
 #endif
+        /* Update prev_tick for next frame's dt calculation */
+        app.prev_tick = app.curr_tick;
 
         /* Check quit condition */
         if (QUIT_SIGNAL) {
-            game_running = 0;
+            app.running = 0;
 #ifdef __EMSCRIPTEN__
             emscripten_cancel_main_loop();
 #endif
@@ -671,10 +690,10 @@ void game_loop_iteration(void) {
  */
 void run_game(void) {
     /* Reset game loop state */
-    game_running = 1;
-    game_menu_result = 0;
+    app.running = 1;
+    app.menu_result = 0;
 
-    prev_tick_count = SDL_GetTicks();
+    app.prev_tick = SDL_GetTicks();
 
 #ifdef __EMSCRIPTEN__
     /* EMSCRIPTEN: Use emscripten_set_main_loop for browser-friendly event loop
@@ -684,7 +703,7 @@ void run_game(void) {
     emscripten_set_main_loop(game_loop_iteration, 0, 1);
 #else
     /* Native build: Traditional while loop */
-    while (game_running) {
+    while (app.running) {
         game_loop_iteration();
     }
 #endif
@@ -717,169 +736,21 @@ void RestartGame(void) {
     }
 
     /* Reset game state */
-    game_running = 1;
-    game_menu_result = 0;
-    activate_menu = 0;  /* Show title screen first */
-    GameState = 0;
+    app.running = 1;
+    app.menu_result = 0;
+    if (app.game) bridge_clear_menu_request(app.game);  /* Show title screen first */
+    level_is_loaded = 0;
 
     /* Show title screen with intro (starts music) */
     display_title_screen();
 
     /* Then go to menu */
-    activate_menu = 1;
+    if (app.game) bridge_request_menu(app.game);
 
     /* Restart main game loop */
     emscripten_set_main_loop(game_loop_iteration, 0, 1);
 }
 #endif
-
-/* External mobile control values - defined in input.c */
-#ifdef __EMSCRIPTEN__
-extern float mobile_tilt_steer;
-extern float mobile_tilt_thrust;
-extern int mobile_controls_active;
-#endif
-
-/*
- * Process player input
- */
-void process_input(void) {
-    if (game_turnout == PLAYER_DEAD) {
-        return;
-    }
-
-    /* Rotation - check for mobile analog tilt first */
-    intbPlayerTurnDir = 0;
-
-#ifdef __EMSCRIPTEN__
-    /* Mobile analog tilt steering - proportional rotation */
-    if (mobile_controls_active && (mobile_tilt_steer > 0.15f || mobile_tilt_steer < -0.15f)) {
-        /* Scale rotation by tilt amount: more tilt = faster rotation */
-        /* Max rotation speed is PLAYER_ROTATE_SPEED * 1.5 for full tilt */
-        float rotate_amount = mobile_tilt_steer * PLAYER_ROTATE_SPEED * 1.5f;
-        intbPlayerAngle += (int8_t)rotate_amount;
-
-        if (mobile_tilt_steer > 0.15f) {
-            intbPlayerTurnDir = 1;
-            FirePlayerRightThrusters();
-        } else if (mobile_tilt_steer < -0.15f) {
-            intbPlayerTurnDir = -1;
-            FirePlayerLeftThrusters();
-        }
-    } else {
-#endif
-        /* Keyboard rotation (desktop) */
-        if (KEYBOARD[SDL_SCANCODE_RIGHT]) {
-            intbPlayerAngle += PLAYER_ROTATE_SPEED;
-            intbPlayerTurnDir = 1;
-            FirePlayerRightThrusters();
-        }
-        if (KEYBOARD[SDL_SCANCODE_LEFT]) {
-            intbPlayerAngle -= PLAYER_ROTATE_SPEED;
-            intbPlayerTurnDir = -1;
-            FirePlayerLeftThrusters();
-        }
-#ifdef __EMSCRIPTEN__
-    }
-#endif
-
-    /* Fire weapons with sound */
-    if (!KEYBOARD[SDL_SCANCODE_X]) {
-        if (snd_weapon_counter > 0) {
-            snd_weapon_counter--;
-            Mix_HaltChannel(1);
-        }
-    }
-    if (KEYBOARD[SDL_SCANCODE_X]) {
-        if (snd_weapon_counter == 0 && snd_effect_weapon) {
-            snd_weapon_counter++;
-            Mix_PlayChannelTimed(1, snd_effect_weapon, -1, -1);
-        }
-        FirePlayerWeapons();
-    }
-
-    /* Forward/backward movement with engine sound */
-    int is_thrusting = 0;
-    int is_braking = 0;
-
-#ifdef __EMSCRIPTEN__
-    /* Mobile analog tilt thrust - proportional acceleration */
-    if (mobile_controls_active && (mobile_tilt_thrust > 0.2f || mobile_tilt_thrust < -0.2f)) {
-        if (mobile_tilt_thrust > 0.2f) {
-            /* Forward thrust - scale acceleration by tilt amount */
-            is_thrusting = 1;
-            float thrust_mult = mobile_tilt_thrust;  /* 0.2 to 1.0 */
-            if (fltPlayerSpeed < fltPlayerMaxSpeed) {
-                fltPlayerSpeed += fltPlayerAccel * thrust_mult;
-            }
-            FirePlayerMainThrusters();
-        } else if (mobile_tilt_thrust < -0.2f) {
-            /* Backward/brake - scale deceleration by tilt amount */
-            is_braking = 1;
-            float brake_mult = -mobile_tilt_thrust;  /* 0.2 to 1.0 */
-            if (fltPlayerSpeed > fltPlayerMinSpeed) {
-                fltPlayerSpeed -= fltPlayerAccel * brake_mult;
-            }
-        }
-    }
-#endif
-
-    /* Keyboard/button thrust (fallback or in addition to tilt) */
-    if (!is_thrusting && !KEYBOARD[SDL_SCANCODE_UP]) {
-        if (snd_engines_counter > 0) {
-            snd_engines_counter--;
-            Mix_HaltChannel(3);
-        }
-    }
-    if (KEYBOARD[SDL_SCANCODE_UP]) {
-        is_thrusting = 1;
-        if (snd_engines_counter == 0 && snd_effect_engines) {
-            snd_engines_counter++;
-            Mix_PlayChannelTimed(3, snd_effect_engines, -1, -1);
-        }
-        if (fltPlayerSpeed < fltPlayerMaxSpeed) {
-            fltPlayerSpeed += fltPlayerAccel;
-        }
-        FirePlayerMainThrusters();
-    }
-    if (KEYBOARD[SDL_SCANCODE_DOWN]) {
-        is_braking = 1;
-        if (fltPlayerSpeed > fltPlayerMinSpeed) {
-            fltPlayerSpeed -= fltPlayerAccel;
-        }
-    }
-
-#ifdef __EMSCRIPTEN__
-    /* Handle engine sound for mobile tilt thrust */
-    if (is_thrusting && snd_engines_counter == 0 && snd_effect_engines) {
-        snd_engines_counter++;
-        Mix_PlayChannelTimed(3, snd_effect_engines, -1, -1);
-    }
-#endif
-
-    /* Strafe */
-    if (KEYBOARD[SDL_SCANCODE_C]) {
-        if (fltPlayerStrafeSpeed < fltPlayerMaxStrafeSpeed) {
-            fltPlayerStrafeSpeed += fltPlayerAccel;
-        }
-        intbPlayerTurnDir++;
-    }
-    if (KEYBOARD[SDL_SCANCODE_Z]) {
-        if (fltPlayerStrafeSpeed > fltPlayerMinStrafeSpeed) {
-            fltPlayerStrafeSpeed -= fltPlayerAccel;
-        }
-        intbPlayerTurnDir--;
-    }
-
-    /* Nuke launch - mirrors assembly lines 837-848 */
-    if (KEYBOARD[SDL_SCANCODE_SPACE]) {
-        if (nuke_wait_counter == 0 && nukes_remaining > 0) {
-            nukes_remaining--;
-            nuke_wait_counter = 25;
-            DropNuke(fltPlayerX, fltPlayerY);
-        }
-    }
-}
 
 /*
  * Load a game level
@@ -887,54 +758,42 @@ void process_input(void) {
 void load_level(int level_id) {
     printf("Loading level %d\n", level_id);
 
-    /* Reset game state - mirrors assembly lines 866-872 */
-    nukes_remaining = num_starting_nukes;
+    /* Calculate level index (menu IDs are 2-7 for levels 0-5) */
+    app.active_level = level_id - 2;
+
+    /* Reset game state */
     game_turnout = PLAYER_NORMAL;
-    victory_defeat_timer = 0;  /* Reset auto-advance timer */
-    GameState = 1;
-    intShakeMap = 0;
+    app.victory_defeat_timer = 0;
+    level_is_loaded = 1;
 
-    /* Calculate active level and initialize enemies - mirrors assembly lines 874-877 */
-    active_level = level_id - 2;
-    InitializeEnemies(active_level);
+    /* Start level via Game struct - this sets up player, enemies, waves, particles */
+    if (app.game) {
+        /* Set captain planet mode if enabled */
+        bridge_set_captain_planet(app.game, num_starting_nukes == 18 ? 1 : 0);
+        bridge_set_weapons_level(app.game, intPlayerWeaponsLevel);
+        bridge_start_level(app.game, app.active_level);
+    }
 
-    /* Fade out current music - callback will load level music - mirrors assembly line 879 */
+    /* Fade out current music - callback will load level music */
     Mix_FadeOutMusic(200);
 
-    /* Reset player - mirrors assembly lines 881-900 */
-    fltPlayerX = (float)MapMidX;
-    fltPlayerY = (float)MapMidY;
-    intPlayerX = MapMidX;
-    intPlayerY = MapMidY;
-    intbPlayerAngle = PLAYER_START_ANGLE;
-    fltPlayerSpeed = 0.0f;
-    fltPlayerStrafeSpeed = 0.0f;
-    intPlayerHealth = MAXPLAYERHEALTH;
+    /* Load map based on level */
+    const char* map_files[] = {
+        "./data/shire.bmp",       /* Level 0 */
+        "./data/archipelago.bmp", /* Level 1 */
+        "./data/dune.bmp",        /* Level 2 */
+        "./data/midkemia.bmp",    /* Level 3 */
+        "./data/oceania.bmp",     /* Level 4 */
+        "./data/mordor.bmp"       /* Level 5 */
+    };
 
-    /* Reset particles - mirrors assembly line 902 */
-    ResetParticleEngine();
+    if (app.active_level >= 0 && app.active_level < 6) {
+        LoadMap(map_files[app.active_level]);
+    }
 
-    /* Load map based on level - mirrors assembly lines 904-959 */
-    switch (level_id) {
-        case MENU_LOAD_SHIRE:
-            LoadMap("./data/shire.bmp");
-            break;
-        case MENU_LOAD_MORDOR:
-            ending_delay_timer = 250;  /* Trigger ending after winning Mordor */
-            LoadMap("./data/mordor.bmp");
-            break;
-        case MENU_LOAD_MIDKEMIA:
-            LoadMap("./data/midkemia.bmp");
-            break;
-        case MENU_LOAD_ARCHIPELAGO:
-            LoadMap("./data/archipelago.bmp");
-            break;
-        case MENU_LOAD_DUNE:
-            LoadMap("./data/dune.bmp");
-            break;
-        case MENU_LOAD_OCEANIA:
-            LoadMap("./data/oceania.bmp");
-            break;
+    /* Set ending timer for Mordor */
+    if (app.active_level >= 5) {
+        app.ending_delay_timer = 250;
     }
 }
 
@@ -947,7 +806,7 @@ void run_ending_sequence(void) {
     extern SDL_Texture* screen_texture;
     extern uint8_t KEYBOARD[320];
 
-    is_ending_running = 1;
+    app.is_ending = 1;
 
     /* Fade out current music - mirrors line 1623 */
     /* This will trigger music_track_finished_callback which loads ending_theme.ogg */
@@ -965,7 +824,7 @@ void run_ending_sequence(void) {
     Mix_HaltChannel(-1);
 
     if (!story_clips) {
-        is_ending_running = 0;
+        app.is_ending = 0;
         return;
     }
 
@@ -1022,7 +881,7 @@ void run_ending_sequence(void) {
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
-                is_ending_running = 0;
+                app.is_ending = 0;
                 return;
             }
         }
@@ -1054,7 +913,7 @@ void run_ending_sequence(void) {
     );
 #endif
 
-    is_ending_running = 0;
+    app.is_ending = 0;
 }
 
 /*
@@ -1122,80 +981,6 @@ void display_title_screen(void) {
 }
 
 /*
- * Draw an object on the minimap
- */
-void draw_minimap_object(int x, int y, uint32_t color1, uint32_t color2, int is_boss) {
-    /* Scale world coordinates to minimap coordinates */
-    int map_x = (x / (MAP_WIDTH / MINIMAP_WIDTH)) + 16;
-    int map_y = (y / (MAP_HEIGHT / MINIMAP_HEIGHT)) + 20;
-
-    /* Calculate screen buffer offset */
-    int offset = map_y * SCREEN_WIDTH + map_x;
-
-    /* Draw center and immediate neighbors with color1 */
-    ScreenOff[offset] = ComputeAlpha(color1, ScreenOff[offset]);
-    ScreenOff[offset - 1] = ComputeAlpha(color1, ScreenOff[offset - 1]);
-    ScreenOff[offset + 1] = ComputeAlpha(color1, ScreenOff[offset + 1]);
-    ScreenOff[offset + SCREEN_WIDTH] = ComputeAlpha(color1, ScreenOff[offset + SCREEN_WIDTH]);
-    ScreenOff[offset - SCREEN_WIDTH] = ComputeAlpha(color1, ScreenOff[offset - SCREEN_WIDTH]);
-
-    /* Draw diagonal and extended pixels with color2 */
-    ScreenOff[offset - SCREEN_WIDTH - 1] = ComputeAlpha(color2, ScreenOff[offset - SCREEN_WIDTH - 1]);
-    ScreenOff[offset - SCREEN_WIDTH + 1] = ComputeAlpha(color2, ScreenOff[offset - SCREEN_WIDTH + 1]);
-    ScreenOff[offset + SCREEN_WIDTH - 1] = ComputeAlpha(color2, ScreenOff[offset + SCREEN_WIDTH - 1]);
-    ScreenOff[offset + SCREEN_WIDTH + 1] = ComputeAlpha(color2, ScreenOff[offset + SCREEN_WIDTH + 1]);
-
-    ScreenOff[offset - 2] = ComputeAlpha(color2, ScreenOff[offset - 2]);
-    ScreenOff[offset + 2] = ComputeAlpha(color2, ScreenOff[offset + 2]);
-    ScreenOff[offset + SCREEN_WIDTH * 2] = ComputeAlpha(color2, ScreenOff[offset + SCREEN_WIDTH * 2]);
-    ScreenOff[offset - SCREEN_WIDTH * 2] = ComputeAlpha(color2, ScreenOff[offset - SCREEN_WIDTH * 2]);
-
-    /* Draw larger pattern for bosses */
-    if (is_boss) {
-        ScreenOff[offset - 3] = ComputeAlpha(color1, ScreenOff[offset - 3]);
-        ScreenOff[offset + 3] = ComputeAlpha(color1, ScreenOff[offset + 3]);
-        ScreenOff[offset - 4] = ComputeAlpha(color2, ScreenOff[offset - 4]);
-        ScreenOff[offset + 4] = ComputeAlpha(color2, ScreenOff[offset + 4]);
-        ScreenOff[offset + SCREEN_WIDTH * 3] = ComputeAlpha(color1, ScreenOff[offset + SCREEN_WIDTH * 3]);
-        ScreenOff[offset - SCREEN_WIDTH * 3] = ComputeAlpha(color1, ScreenOff[offset - SCREEN_WIDTH * 3]);
-        ScreenOff[offset + SCREEN_WIDTH * 4] = ComputeAlpha(color2, ScreenOff[offset + SCREEN_WIDTH * 4]);
-        ScreenOff[offset - SCREEN_WIDTH * 4] = ComputeAlpha(color2, ScreenOff[offset - SCREEN_WIDTH * 4]);
-    }
-}
-
-/*
- * Render the minimap
- */
-void render_minimap(void) {
-    if (game_turnout == PLAYER_DEAD) return;
-
-    /* Draw semi-transparent dark background for minimap */
-    uint32_t dark_overlay = 0x80000000;
-    for (int row = 0; row < MINIMAP_HEIGHT; row++) {
-        int y = 20 + row;
-        for (int col = 0; col < MINIMAP_WIDTH; col++) {
-            int x = 16 + col;
-            int offset = y * SCREEN_WIDTH + x;
-            ScreenOff[offset] = ComputeAlpha(dark_overlay, ScreenOff[offset]);
-        }
-    }
-
-    /* Draw player on minimap (blue) */
-    draw_minimap_object(intPlayerX, intPlayerY, 0x800000FF, 0xA0FFFFFF, 1);
-
-    /* Draw all active enemies on minimap (red) */
-    for (int i = 0; i < 100; i++) {
-        if (Enemies[i].enemy_type == (uint32_t)-1) break;
-        if (Enemies[i].enemy_active != 1) continue;
-
-        /* Special case: ShimDog boss (type 3, size 1) */
-        int is_boss = (Enemies[i].enemy_type == 3 && Enemies[i].enemy_size == 1) ? 1 : Enemies[i].enemy_size;
-
-        draw_minimap_object(Enemies[i].enemy_x_int, Enemies[i].enemy_y_int, 0xA0FF0000, 0xA0FFFFFF, is_boss);
-    }
-}
-
-/*
  * Music track finished callback - loads appropriate music for current game state
  */
 void music_track_finished_callback(void) {
@@ -1209,7 +994,7 @@ void music_track_finished_callback(void) {
     Mix_VolumeMusic(110);
 
     /* Check if ending sequence is running */
-    if (is_ending_running) {
+    if (app.is_ending) {
         snd_track = Mix_LoadMUS("./sound/ending_theme.ogg");
         if (snd_track) {
             Mix_PlayMusic(snd_track, 1);
@@ -1237,8 +1022,8 @@ void music_track_finished_callback(void) {
         "./sound/sound_track6.ogg"   /* Mordor */
     };
 
-    if (active_level >= 0 && active_level < 6) {
-        snd_track = Mix_LoadMUS(music_files[active_level]);
+    if (app.active_level >= 0 && app.active_level < 6) {
+        snd_track = Mix_LoadMUS(music_files[app.active_level]);
         if (snd_track) {
             Mix_PlayMusic(snd_track, 1);
         }

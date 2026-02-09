@@ -28,7 +28,14 @@ SOURCES = $(SRC_DIR)/main.c \
           $(SRC_DIR)/ppe.c \
           $(SRC_DIR)/enemy.c \
           $(SRC_DIR)/ai.c \
-          $(SRC_DIR)/menu.c
+          $(SRC_DIR)/menu.c \
+          $(SRC_DIR)/game/game.c \
+          $(SRC_DIR)/game/weapons.c \
+          $(SRC_DIR)/game/bridge.c \
+          $(SRC_DIR)/game/render.c \
+          $(SRC_DIR)/game/audio_bridge.c \
+          $(SRC_DIR)/game/sprites.c \
+          $(SRC_DIR)/game/menu_new.c
 
 TARGET = $(BUILD_DIR)/game.html
 
@@ -73,4 +80,9 @@ serve: $(TARGET)
 	@echo "Open http://localhost:8000/wasm_build/game.html in your browser"
 	python3 -m http.server 8000
 
-.PHONY: all clean serve
+# New engine build (uses unified Game struct instead of legacy globals)
+new-engine: CFLAGS += -DUSE_NEW_ENGINE
+new-engine: clean $(TARGET)
+	@echo "Built WASM with NEW ENGINE enabled"
+
+.PHONY: all clean serve new-engine
