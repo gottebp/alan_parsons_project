@@ -777,6 +777,15 @@ void enemies_update(Game* game, float dt) {
 
         /* Physics: apply the decision */
         enemy_physics(e, accel, scale);
+
+        /* Smoke trail when health is low */
+        int max_health = (int)(e->mass * ENEMY_HEALTH_MULTIPLIER);
+        if (e->health > 0 && e->health < max_health / 3) {
+            uint8_t smoke_angle = game_rand_range(game, 256);
+            int flare = (game_rand(game) & 1) ? 2 : 3;
+            particle_spawn(game, COLLISION_NONE, PARTICLE_SIZE_LARGE, flare,
+                          e->position, smoke_angle, 1.0f, 30, 0);
+        }
     });
 }
 

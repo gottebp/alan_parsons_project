@@ -29,6 +29,7 @@ typedef struct {
     /* Music state */
     int current_level_music;
     int music_playing;
+    void* current_music;   /* Mix_Music* — owned, freed before loading new music */
 } AudioBridgeState;
 
 /*============================================================================

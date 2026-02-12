@@ -34,8 +34,13 @@ void UpdateInput(void) {
     uint32_t mouse_state;
     int raw_mx, raw_my;
 
-    /* Pump SDL events */
-    SDL_PumpEvents();
+    /* Poll SDL events — drains the queue (implicitly pumps) and handles SDL_QUIT */
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) {
+            QUIT_SIGNAL = 1;
+        }
+    }
 
     /* Get mouse state into int locals (avoids uint16_t* cast bug) */
     mouse_state = SDL_GetMouseState(&raw_mx, &raw_my);

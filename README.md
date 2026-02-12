@@ -57,9 +57,8 @@ make -f Makefile.emscripten serve
 
 | Command | Output | Description |
 |---------|--------|-------------|
-| `make` | `alan_parsons_pure` | New clean architecture (default) |
-| `make legacy` | `alan_parsons_c` | Legacy architecture with bridge |
-| `make test` | | Run test suite (118 tests) |
+| `make` | `alan_parsons` | Build game (default) |
+| `make test` | | Run test suite |
 | `make -f Makefile.emscripten` | `wasm_build/game.html` | Browser build |
 
 ## Project Structure
@@ -72,8 +71,7 @@ include_c/
 └── platform/   # Platform abstraction
 
 source_c/
-├── main_pure.c # Entry point (new arch)
-├── main.c      # Entry point (legacy)
+├── main.c      # Entry point
 ├── game/       # Game logic implementation
 └── platform/   # SDL/platform code
 

@@ -55,6 +55,7 @@ void audio_bridge_init(AudioBridgeState* state) {
     state->last_hit_frame = -100;
     state->current_level_music = -1;
     state->music_playing = 0;
+    state->current_music = NULL;
 
     /* Load engine/weapon sounds if context not set and not already loaded */
     if (!ab_initialized && !sounds_loaded) {
@@ -182,6 +183,11 @@ void audio_bridge_level_start(AudioBridgeState* state, int level_index) {
         if (state->current_level_music != level_index) {
             Mix_Music* music = Mix_LoadMUS(music_files[level_index]);
             if (music) {
+                Mix_HaltMusic();
+                if (state->current_music) {
+                    Mix_FreeMusic((Mix_Music*)state->current_music);
+                }
+                state->current_music = music;
                 Mix_VolumeMusic(110);
                 Mix_PlayMusic(music, 1);
                 state->current_level_music = level_index;
@@ -225,6 +231,11 @@ void audio_bridge_menu_music(AudioBridgeState* state) {
 
     Mix_Music* music = Mix_LoadMUS("./sound/menu_theme.ogg");
     if (music) {
+        Mix_HaltMusic();
+        if (state->current_music) {
+            Mix_FreeMusic((Mix_Music*)state->current_music);
+        }
+        state->current_music = music;
         Mix_VolumeMusic(110);
         Mix_PlayMusic(music, 1);
         state->current_level_music = -1;
@@ -236,6 +247,10 @@ void audio_bridge_stop_music(AudioBridgeState* state) {
     if (!state) return;
 
     Mix_HaltMusic();
+    if (state->current_music) {
+        Mix_FreeMusic((Mix_Music*)state->current_music);
+        state->current_music = NULL;
+    }
     state->music_playing = 0;
 }
 
