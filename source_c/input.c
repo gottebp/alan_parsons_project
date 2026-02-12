@@ -17,6 +17,9 @@ static int js_mouse_active = 0;
 
 /* Global input state - mirrors assembly exactly */
 uint8_t KEYBOARD[320] = {0};        /* Matches assembly's 320 bytes */
+#ifdef __EMSCRIPTEN__
+static uint8_t virtual_keys[320] = {0};  /* Touch button state, merged after SDL copy */
+#endif
 uint16_t MOUSE_X = 0;               /* Matches assembly's word */
 uint16_t MOUSE_Y = 0;               /* Matches assembly's word */
 uint16_t MOUSE_LBUTTON = 0;         /* Matches assembly's word */
@@ -106,6 +109,13 @@ void UpdateInput(void) {
 
     /* Copy 320 bytes / 4 = 80 dwords (mirrors assembly's invoke _sseMemcpy32) */
     sseMemcpy32(KEYBOARD, kb_ptr, 80);
+
+#ifdef __EMSCRIPTEN__
+    /* Merge virtual key state from touch buttons so they aren't lost */
+    for (int i = 0; i < 320; i++) {
+        if (virtual_keys[i]) KEYBOARD[i] = 1;
+    }
+#endif
 }
 
 /*
@@ -135,9 +145,9 @@ int mobile_controls_active = 0;    /* Flag indicating mobile controls are being 
  */
 EMSCRIPTEN_KEEPALIVE
 void handle_virtual_key(int sdl_scancode, int pressed) {
-    /* Directly set keyboard state for this scancode */
+    /* Set virtual key state — merged into KEYBOARD[] each frame by UpdateInput() */
     if (sdl_scancode >= 0 && sdl_scancode < 320) {
-        KEYBOARD[sdl_scancode] = pressed ? 1 : 0;
+        virtual_keys[sdl_scancode] = pressed ? 1 : 0;
     }
 }
 

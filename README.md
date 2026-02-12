@@ -17,8 +17,8 @@ brew install sdl2 sdl2_mixer
 sudo apt-get install libsdl2-dev libsdl2-mixer-dev
 
 # Build and run
-make
-./alan_parsons_pure
+make -f Makefile.c
+./alan_parsons
 ```
 
 ### WASM Build (Browser)
@@ -49,16 +49,16 @@ make -f Makefile.emscripten serve
 ## Command Line Options
 
 ```bash
-./alan_parsons_pure --fullscreen      # Start in fullscreen
-./alan_parsons_pure --captainplanet   # Invincibility mode
+./alan_parsons --fullscreen      # Start in fullscreen
+./alan_parsons --captainplanet   # Invincibility mode
 ```
 
 ## Build Targets
 
 | Command | Output | Description |
 |---------|--------|-------------|
-| `make` | `alan_parsons` | Build game (default) |
-| `make test` | | Run test suite |
+| `make -f Makefile.c` | `alan_parsons` | Build game |
+| `make -f Makefile.c test` | | Run test suite |
 | `make -f Makefile.emscripten` | `wasm_build/game.html` | Browser build |
 
 ## Project Structure
