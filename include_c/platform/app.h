@@ -47,6 +47,21 @@ typedef struct {
 } AudioAssets;
 
 /*============================================================================
+ * RENDER CONTEXT
+ * Owns the screen buffers - replaces global ScreenOff/ScreenTemp
+ *============================================================================*/
+
+typedef struct {
+    uint32_t* screen;           /* Main screen buffer (was ScreenOff) */
+    uint32_t* temp;             /* Temp buffer for fades (was ScreenTemp) */
+    void* window;               /* SDL_Window* */
+    void* renderer;             /* SDL_Renderer* */
+    void* texture;              /* SDL_Texture* */
+    int width;
+    int height;
+} RenderContext;
+
+/*============================================================================
  * VISUAL ASSETS
  *============================================================================*/
 
@@ -90,6 +105,11 @@ typedef struct {
     InputState input;       /* Current frame's input state */
 
     /*------------------------------------------------------------------------
+     * RENDERING
+     *------------------------------------------------------------------------*/
+    RenderContext render;       /* Screen buffers and SDL handles */
+
+    /*------------------------------------------------------------------------
      * ASSETS
      *------------------------------------------------------------------------*/
     AudioAssets audio;
@@ -105,6 +125,7 @@ typedef struct {
      *------------------------------------------------------------------------*/
     int ending_timer;       /* Delay before ending sequence */
     int in_ending;          /* 1 = ending sequence active */
+    int in_main_loop;       /* 1 = emscripten main loop active (skip blocking fades) */
 
 } App;
 
@@ -172,5 +193,27 @@ void app_play_menu_music(App* app);
 
 /* Stop all music */
 void app_stop_music(App* app);
+
+/*============================================================================
+ * RENDER OPERATIONS
+ *============================================================================*/
+
+/* Clear screen buffer to color */
+void app_clear_screen(App* app, uint32_t color);
+
+/* Present screen buffer to display */
+void app_present(App* app);
+
+/*============================================================================
+ * EMSCRIPTEN SUPPORT
+ *============================================================================*/
+
+#ifdef __EMSCRIPTEN__
+/* Set global app pointer for RestartGame */
+void app_set_restart_pointer(App* app);
+
+/* Called when user quits - waits for restart click */
+void RestartGame(void);
+#endif
 
 #endif /* APP_H */

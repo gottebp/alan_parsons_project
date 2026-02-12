@@ -66,6 +66,7 @@ typedef struct PlatformInputState {
     /* Digital inputs */
     int up, down, left, right;
     int fire, nuke;
+    int strafe_left, strafe_right;
     int pause, escape;
 
     /* Mouse */

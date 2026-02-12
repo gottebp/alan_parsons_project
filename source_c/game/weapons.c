@@ -113,6 +113,7 @@ void player_fire_nuke(Game* game) {
     p->nuke_cooldown = PLAYER_NUKE_COOLDOWN;
 
     effect_nuke(game, p->position);
+    effect_screen_shake(game, 60);
     game->audio_nuke_fired = 1;  /* Signal for audio */
 }
 

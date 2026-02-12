@@ -7,71 +7,36 @@
 #include <string.h>
 #include <math.h>
 
-/* Screen and Display Constants */
-#define SCREEN_WIDTH            1280
-#define SCREEN_HEIGHT           800
-#define SCREEN_BPP              32
+/* All game constants defined in one place */
+#include "core/constants.h"
 
-#define MAP_WIDTH               3200
-#define MAP_HEIGHT              2400
+/*============================================================================
+ * LEGACY ALIASES
+ * Old names still used by legacy modules (player.c, enemy.c, ai.c, etc.)
+ *============================================================================*/
 
-#define MINIMAP_WIDTH           128
-#define MINIMAP_HEIGHT          96
-
-#define PLAYER_WIDTH            128
-#define PLAYER_HEIGHT           128
-
-#define MAXPLAYERHEALTH         10000
-#define PLAYER_HEALTH_BAR_HEIGHT 10
-
-#define PLAYER_ROTATE_SPEED     4
-#define PLAYER_START_ANGLE      -64
-
-#define PLAYER_IMG_FILE_WIDTH   PLAYER_WIDTH
-#define PLAYER_IMG_FILE_HEIGHT  (PLAYER_HEIGHT * 256)
-
-#define SHAKE_FACTOR            40
-
-/* Enemy Constants */
-#define MAX_ENEMIES             100
-
-/* Particle System Constants */
-#define MAX_PARTICLES           10000
-#define SMALL_PARTICLE_WIDTH    32
-#define SMALL_PARTICLE_HEIGHT   32
-#define LARGE_PARTICLE_WIDTH    64
-#define LARGE_PARTICLE_HEIGHT   64
+#define MAXPLAYERHEALTH         PLAYER_MAX_HEALTH
+#define SHAKE_FACTOR            SHAKE_INTENSITY
+#define NUM_SMALL_FLARE_TYPES   SMALL_FLARE_TYPES
+#define NUM_LARGE_FLARE_TYPES   LARGE_FLARE_TYPES
 #define PARTICLE_STRUCT_SIZE    46
-#define SMALL_PARTICLE          0
-#define LARGE_PARTICLE          1
+#define NUM_NUKES               PLAYER_NUKE_COUNT
 
-#define NUM_SMALL_FLARE_TYPES   16
-#define NUM_LARGE_FLARE_TYPES   10
+#define RANDSPAWNDIVISOR        SPAWN_RANDOM_DIVISOR
+#define MASS_HEALTH_MULTIPLIER  ENEMY_HEALTH_MULTIPLIER
+#define ENEMYSHIFTSIZE          ENEMY_SPRITE_FRAMES
+#define SMALLENEMYMEMSIZE       SMALL_ENEMY_MEM_SIZE
+#define BOSSENEMYMEMSIZE        BOSS_MEM_SIZE
 
-#define SMALL_FLARE_FILE_WIDTH  32
-#define SMALL_FLARE_FILE_HEIGHT 512
-#define LARGE_FLARE_FILE_WIDTH  64
-#define LARGE_FLARE_FILE_HEIGHT 640
+#define INNER_RADIUS_CUTOFF     ENEMY_INNER_RADIUS
+#define OUTER_RADIUS_CUTOFF     ENEMY_OUTER_RADIUS
+#define MAX_ENEMY_TURNING_SPEED ENEMY_MAX_TURN_RATE
+#define MAX_ENEMY_SPEED         ENEMY_MAX_SPEED
 
 /* Player States */
-#define PLAYER_NORMAL           0
-#define PLAYER_DEAD             1
-#define PLAYER_WIN              2
-
-#define NUM_NUKES               4
-
-/* Enemy Definitions */
-#define RANDSPAWNDIVISOR        2
-#define MASS_HEALTH_MULTIPLIER  20
-#define ENEMYSHIFTSIZE          16
-#define SMALLENEMYMEMSIZE       (128*128*4*16*4)
-#define BOSSENEMYMEMSIZE        (256*256*4*16*4)
-
-#define INNER_RADIUS_CUTOFF     300
-#define OUTER_RADIUS_CUTOFF     2500
-
-#define MAX_ENEMY_TURNING_SPEED 4
-#define MAX_ENEMY_SPEED         4
+#define PLAYER_NORMAL           GAME_PLAYING
+#define PLAYER_DEAD             GAME_PLAYER_DEAD
+#define PLAYER_WIN              GAME_PLAYER_WIN
 
 /* Sound Definitions */
 #define DMABUFFSIZE             2000
@@ -81,30 +46,23 @@
 #define SOUND_NOREPEAT          0x00
 
 /* Menu Definitions */
-#define MENU_LOAD_SHIRE         2
-#define MENU_LOAD_MORDOR        7
-#define MENU_LOAD_MIDKEMIA      5
-#define MENU_LOAD_ARCHIPELAGO   3
-#define MENU_LOAD_DUNE          4
-#define MENU_LOAD_OCEANIA       6
-
-#define CURSOR_WIDTH            64
-#define CURSOR_HEIGHT           64
+#define MENU_LOAD_SHIRE         MENU_SHIRE
+#define MENU_LOAD_MORDOR        MENU_MORDOR
+#define MENU_LOAD_MIDKEMIA      MENU_MIDKEMIA
+#define MENU_LOAD_ARCHIPELAGO   MENU_ARCHIPELAGO
+#define MENU_LOAD_DUNE          MENU_DUNE
+#define MENU_LOAD_OCEANIA       MENU_OCEANIA
 
 /* Camera Constants */
-#define CAMERA_FREEDOM_RADIUS   150.0f  /* Player can move this far from camera center before camera follows */
+#define CAMERA_FREEDOM_RADIUS   150.0f
 
-/* Body Collision Constants */
-#define PLAYER_BODY_RADIUS      40.0f   /* Actual body collision radius */
-#define SMALL_ENEMY_BODY_RADIUS 50.0f   /* Small enemy collision radius */
-#define BOSS_BODY_RADIUS        114.0f  /* Boss collision radius */
-#define BODY_COLLISION_DAMAGE_SCALE  0.5f   /* Damage = relative_speed * scale */
-#define BODY_COLLISION_MIN_DAMAGE    5      /* Minimum damage from any collision */
-#define BODY_COLLISION_KNOCKBACK     8.0f   /* Knockback velocity multiplier */
-#define PLAYER_INVULN_FRAMES         30     /* Frames of invulnerability after body hit */
-#define ENEMY_INVULN_FRAMES          15     /* Shorter for enemies */
+/* Legacy collision radii */
+#define SMALL_ENEMY_BODY_RADIUS 50.0f
+#define BOSS_BODY_RADIUS        114.0f
 
-/* Structure Definitions */
+/*============================================================================
+ * STRUCTURE DEFINITIONS
+ *============================================================================*/
 
 /* Enemy Structure */
 typedef struct {

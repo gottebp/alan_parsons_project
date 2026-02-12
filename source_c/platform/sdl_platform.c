@@ -21,9 +21,8 @@
 #include <emscripten.h>
 #endif
 
-/* Screen dimensions - must match defs.h */
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
+/* Screen dimensions from shared header */
+#include "../../include_c/core/constants.h"
 
 /*============================================================================
  * EXTERNAL REFERENCES TO EXISTING CODE
@@ -166,8 +165,10 @@ void platform_update_input(PlatformInputState* input) {
     input->down = KEYBOARD[SDL_SCANCODE_DOWN] || KEYBOARD[SDL_SCANCODE_S];
     input->left = KEYBOARD[SDL_SCANCODE_LEFT] || KEYBOARD[SDL_SCANCODE_A];
     input->right = KEYBOARD[SDL_SCANCODE_RIGHT] || KEYBOARD[SDL_SCANCODE_D];
-    input->fire = KEYBOARD[SDL_SCANCODE_SPACE] || MOUSE_LBUTTON;
-    input->nuke = KEYBOARD[SDL_SCANCODE_LCTRL] || KEYBOARD[SDL_SCANCODE_RCTRL] || MOUSE_RBUTTON;
+    input->fire = KEYBOARD[SDL_SCANCODE_X] || MOUSE_LBUTTON;
+    input->nuke = KEYBOARD[SDL_SCANCODE_SPACE] || MOUSE_RBUTTON;
+    input->strafe_left = KEYBOARD[SDL_SCANCODE_Z];
+    input->strafe_right = KEYBOARD[SDL_SCANCODE_C];
     input->pause = KEYBOARD[SDL_SCANCODE_P];
     input->escape = KEYBOARD[SDL_SCANCODE_ESCAPE];
 

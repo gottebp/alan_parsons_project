@@ -4,8 +4,16 @@
  */
 
 #include "input.h"
+#include "sdl_wrapper.h"
 #include "sse_mem.h"
 #include <string.h>
+
+#ifdef __EMSCRIPTEN__
+/* JavaScript-tracked mouse position (in game logical coordinates) */
+static int js_mouse_x = 0;
+static int js_mouse_y = 0;
+static int js_mouse_active = 0;
+#endif
 
 /* Global input state - mirrors assembly exactly */
 uint8_t KEYBOARD[320] = {0};        /* Matches assembly's 320 bytes */
@@ -24,13 +32,53 @@ int QUIT_SIGNAL = 0;
 void UpdateInput(void) {
     const uint8_t* kb_ptr;
     uint32_t mouse_state;
+    int raw_mx, raw_my;
 
     /* Pump SDL events */
     SDL_PumpEvents();
 
-    /* Get mouse state - x, y, and button state */
-    mouse_state = SDL_GetMouseState((int*)&MOUSE_X, (int*)&MOUSE_Y);
+    /* Get mouse state into int locals (avoids uint16_t* cast bug) */
+    mouse_state = SDL_GetMouseState(&raw_mx, &raw_my);
     MOUSE_BUTTON = (uint8_t)mouse_state;
+
+    /* Convert window coords to logical coords */
+    if (screen_renderer) {
+        int out_w, out_h;
+        SDL_GetRendererOutputSize(screen_renderer, &out_w, &out_h);
+
+        float scale_x = (float)out_w / SCREEN_WIDTH;
+        float scale_y = (float)out_h / SCREEN_HEIGHT;
+        float scale = (scale_x < scale_y) ? scale_x : scale_y;
+
+        int viewport_w = (int)(SCREEN_WIDTH * scale);
+        int viewport_h = (int)(SCREEN_HEIGHT * scale);
+        int offset_x = (out_w - viewport_w) / 2;
+        int offset_y = (out_h - viewport_h) / 2;
+
+        int lx = (int)((raw_mx - offset_x) / scale);
+        int ly = (int)((raw_my - offset_y) / scale);
+
+        /* Clamp to logical bounds */
+        if (lx < 0) lx = 0;
+        if (lx >= SCREEN_WIDTH) lx = SCREEN_WIDTH - 1;
+        if (ly < 0) ly = 0;
+        if (ly >= SCREEN_HEIGHT) ly = SCREEN_HEIGHT - 1;
+
+        MOUSE_X = (uint16_t)lx;
+        MOUSE_Y = (uint16_t)ly;
+    } else {
+        /* Renderer not yet initialized, use raw coords */
+        MOUSE_X = (uint16_t)raw_mx;
+        MOUSE_Y = (uint16_t)raw_my;
+    }
+
+#ifdef __EMSCRIPTEN__
+    /* Override with JavaScript-tracked position (handles mousemove reliably) */
+    if (js_mouse_active) {
+        MOUSE_X = (uint16_t)js_mouse_x;
+        MOUSE_Y = (uint16_t)js_mouse_y;
+    }
+#endif
 
     /* Extract individual button states (mirrors assembly logic) */
     MOUSE_LBUTTON = 0;
@@ -134,18 +182,27 @@ int is_mobile_active(void) {
 }
 
 /*
+ * Handle mouse move from JavaScript
+ * EMSCRIPTEN: Called from JavaScript mousemove handler with logical coordinates
+ */
+EMSCRIPTEN_KEEPALIVE
+void handle_mouse_move(int x, int y) {
+    js_mouse_x = x;
+    js_mouse_y = y;
+    js_mouse_active = 1;
+}
+
+/*
  * Handle touch cursor for menu navigation
  * EMSCRIPTEN: Called from JavaScript with touch coordinates
  */
 EMSCRIPTEN_KEEPALIVE
 void handle_touch_cursor(int x, int y, int is_pressed) {
-    if (is_pressed) {
-        MOUSE_X = x;
-        MOUSE_Y = y;
-        MOUSE_LBUTTON = 1;
-    } else {
-        MOUSE_LBUTTON = 0;
-    }
+    /* Always update position (for both touch-down and touch-move) */
+    js_mouse_x = x;
+    js_mouse_y = y;
+    js_mouse_active = 1;
+    MOUSE_LBUTTON = is_pressed ? 1 : 0;
 }
 
 #endif  /* __EMSCRIPTEN__ */

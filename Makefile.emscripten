@@ -3,14 +3,16 @@
 
 CC = emcc
 # NOTE: Using -std=gnu99 instead of -std=c99 because EM_ASM requires GNU extensions
-CFLAGS = -Wall -std=gnu99 -Iinclude_c
+CFLAGS = -O2 -Wall -std=gnu99 -Iinclude_c
 EMFLAGS = -s USE_SDL=2 \
           -s USE_SDL_MIXER=2 \
           -s SDL2_MIXER_FORMATS='["ogg","wav"]' \
           -s ALLOW_MEMORY_GROWTH=1 \
           -s INITIAL_MEMORY=268435456 \
+          -s STACK_SIZE=1048576 \
           -s ASYNCIFY \
-          -s EXPORTED_FUNCTIONS='["_main","_RestartGame","_handle_virtual_key","_handle_tilt_input","_handle_touch_cursor"]' \
+          -s ASYNCIFY_STACK_SIZE=65536 \
+          -s EXPORTED_FUNCTIONS='["_main","_RestartGame","_handle_virtual_key","_handle_tilt_input","_handle_touch_cursor","_handle_mouse_move"]' \
           -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
           --shell-file shell.html
 
@@ -18,6 +20,7 @@ SRC_DIR = source_c
 INC_DIR = include_c
 BUILD_DIR = wasm_build
 
+# Core sources (unified architecture - no bridge needed)
 SOURCES = $(SRC_DIR)/main.c \
           $(SRC_DIR)/sdl_wrapper.c \
           $(SRC_DIR)/input.c \
@@ -28,14 +31,14 @@ SOURCES = $(SRC_DIR)/main.c \
           $(SRC_DIR)/ppe.c \
           $(SRC_DIR)/enemy.c \
           $(SRC_DIR)/ai.c \
-          $(SRC_DIR)/menu.c \
           $(SRC_DIR)/game/game.c \
           $(SRC_DIR)/game/weapons.c \
-          $(SRC_DIR)/game/bridge.c \
           $(SRC_DIR)/game/render.c \
           $(SRC_DIR)/game/audio_bridge.c \
           $(SRC_DIR)/game/sprites.c \
-          $(SRC_DIR)/game/menu_new.c
+          $(SRC_DIR)/game/menu.c \
+          $(SRC_DIR)/platform/app.c \
+          $(SRC_DIR)/platform/sdl_platform.c
 
 TARGET = $(BUILD_DIR)/game.html
 
@@ -46,7 +49,7 @@ all: $(BUILD_DIR) $(TARGET)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Build WASM version with compressed data (using pako)
+# Build WASM version with compressed data
 $(TARGET): $(SOURCES)
 	@echo "Creating asset package..."
 	python3 $$(em-config EMSCRIPTEN_ROOT)/tools/file_packager.py \
@@ -55,17 +58,17 @@ $(TARGET): $(SOURCES)
 		--preload sound@/sound \
 		--js-output=$(BUILD_DIR)/game.data.js \
 		--use-preload-cache
+	@echo "Patching loader to use compressed data..."
+	chmod +x patch_loader.sh
+	./patch_loader.sh
+	@echo "Compressing game.data with gzip..."
+	gzip -9 -c $(BUILD_DIR)/game.data > $(BUILD_DIR)/game.data.gz
+	@echo "Compressed: $$(ls -lh $(BUILD_DIR)/game.data.gz | awk '{print $$5}')"
 	@echo "Compiling WASM..."
 	$(CC) $(CFLAGS) $(EMFLAGS) $(SOURCES) \
 		--pre-js $(BUILD_DIR)/game.data.js \
 		-s FORCE_FILESYSTEM=1 \
 		-o $(TARGET)
-	@echo "Compressing game.data with gzip..."
-	gzip -9 -c $(BUILD_DIR)/game.data > $(BUILD_DIR)/game.data.gz
-	@echo "Compressed: $$(ls -lh $(BUILD_DIR)/game.data.gz | awk '{print $$5}')"
-	@echo "Patching loader to use compressed data..."
-	chmod +x patch_loader.sh
-	./patch_loader.sh
 	@echo "Removing uncompressed game.data (keeping .gz only)..."
 	rm -f $(BUILD_DIR)/game.data
 	@echo "Build complete! Compressed from 213MB to 32MB (85% reduction)"
@@ -80,9 +83,4 @@ serve: $(TARGET)
 	@echo "Open http://localhost:8000/wasm_build/game.html in your browser"
 	python3 -m http.server 8000
 
-# New engine build (uses unified Game struct instead of legacy globals)
-new-engine: CFLAGS += -DUSE_NEW_ENGINE
-new-engine: clean $(TARGET)
-	@echo "Built WASM with NEW ENGINE enabled"
-
-.PHONY: all clean serve new-engine
+.PHONY: all clean serve

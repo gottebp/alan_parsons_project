@@ -80,11 +80,14 @@ typedef struct {
     /*------------------------------------------------------------------------
      * VISUAL EFFECTS
      *------------------------------------------------------------------------*/
-    int shake_frames;       /* Remaining screen shake */
+    float shake_timer;      /* Remaining screen shake (seconds) */
+    int shake_offset_x;    /* Current camera offset from shake */
+    int shake_offset_y;
 
     /*------------------------------------------------------------------------
      * TIMING
      *------------------------------------------------------------------------*/
+    float accumulator;      /* Fixed timestep accumulator (seconds) */
     uint32_t frame_count;   /* Total frames since level start */
 
     /*------------------------------------------------------------------------
@@ -98,6 +101,7 @@ typedef struct {
     int audio_player_hit;       /* Player took damage this frame */
     int audio_enemy_destroyed;  /* Enemy was destroyed this frame */
     int audio_nuke_fired;       /* Nuke was fired this frame */
+    int audio_boss_spawned;     /* Boss appeared this frame */
 
 } Game;
 
@@ -264,6 +268,9 @@ void game_load_progress(Game* game);
 /*============================================================================
  * MENU (non-blocking)
  *============================================================================*/
+
+/* Set the render context for menu (call once during app init) */
+void menu_set_render_context(uint32_t* screen);
 
 /* Initialize menu state for showing menu */
 void menu_enter(Game* game);

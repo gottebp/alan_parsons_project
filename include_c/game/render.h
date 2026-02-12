@@ -9,6 +9,15 @@
 #define RENDER_H
 
 #include "game.h"
+#include <stdint.h>
+
+/*============================================================================
+ * INITIALIZATION
+ *============================================================================*/
+
+/* Set the render context (call once during app init)
+ * This allows render.c to use these resources without global dependencies */
+void render_set_context(uint32_t* screen, uint32_t* temp, void* renderer, void* texture, int width, int height);
 
 /*============================================================================
  * RENDERING FUNCTIONS

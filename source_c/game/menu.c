@@ -9,8 +9,9 @@
 #include "../../include_c/core/types.h"
 #include "../../include_c/core/constants.h"
 #include <string.h>
+#include <stdlib.h>
 
-/* External references for rendering */
+/* External references for rendering (fallback if context not set) */
 extern uint32_t* ScreenOff;
 extern uint32_t ScreenTemp[];
 extern void sseMemset32(uint32_t* dst, uint32_t value, int count);
@@ -20,9 +21,65 @@ extern void UpdateScreen(void);
 extern int LoadBMP(uint32_t* buffer, const char* filename);
 extern uint32_t Rand(void);
 
-/* Menu assets - loaded by InitMenu() in menu.c */
-extern uint32_t* menu_background;
-extern uint32_t* mouse_cursor;
+/*============================================================================
+ * RENDER CONTEXT - Internal state set by menu_set_render_context()
+ *============================================================================*/
+static uint32_t* m_screen = NULL;
+static int m_initialized = 0;
+
+void menu_set_render_context(uint32_t* screen) {
+    m_screen = screen;
+    m_initialized = 1;
+}
+
+/*============================================================================
+ * MENU ASSETS AND STATE
+ *============================================================================*/
+uint32_t* menu_background = NULL;
+uint32_t* mouse_cursor = NULL;
+uint8_t IsMenuRunning = 0;
+
+void InitMenu(void) {
+    /* Allocate and load menu background */
+    menu_background = (uint32_t*)malloc(640 * 480 * sizeof(uint32_t));
+    if (menu_background) {
+        if (LoadBMP(menu_background, "data/main_menu.bmp") != 0) {
+            free(menu_background);
+            menu_background = NULL;
+        }
+    }
+
+    /* Allocate and load mouse cursor */
+    mouse_cursor = (uint32_t*)malloc(CURSOR_WIDTH * CURSOR_HEIGHT * sizeof(uint32_t));
+    if (mouse_cursor) {
+        if (LoadBMP(mouse_cursor, "data/cursor.bmp") != 0) {
+            free(mouse_cursor);
+            mouse_cursor = NULL;
+        } else {
+            /* Convert cyan (R=0, G=255, B=255) to transparent */
+            for (int i = 0; i < CURSOR_WIDTH * CURSOR_HEIGHT; i++) {
+                uint32_t pixel = mouse_cursor[i];
+                uint8_t r = (pixel >> 16) & 0xFF;
+                uint8_t g = (pixel >> 8) & 0xFF;
+                uint8_t b = pixel & 0xFF;
+                if (r == 0 && g == 255 && b == 255) {
+                    mouse_cursor[i] = 0x00000000;
+                }
+            }
+        }
+    }
+}
+
+void DestroyMenu(void) {
+    if (menu_background) {
+        free(menu_background);
+        menu_background = NULL;
+    }
+    if (mouse_cursor) {
+        free(mouse_cursor);
+        mouse_cursor = NULL;
+    }
+}
 
 /* Menu asset dimensions (the menu background BMP is 640x480) */
 #define MENU_WIDTH 640
@@ -202,12 +259,16 @@ int menu_update(Game* game, const InputState* input) {
  * Render menu - called each frame during STATE_MENU
  */
 void menu_render(const Game* game) {
-    const MenuState* m = &game->menu;
+    const MenuState* menu = &game->menu;
 
     if (!menu_background) return;
 
+    /* Use context if set, otherwise fall back to global */
+    uint32_t* screen = m_initialized ? m_screen : ScreenOff;
+    if (!screen) return;
+
     /* Clear full screen and draw centered background */
-    sseMemset32(ScreenOff, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+    sseMemset32(screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
     AlphaBlit(MENU_OFFSET_X, MENU_OFFSET_Y, menu_background, MENU_WIDTH, MENU_HEIGHT);
 
     /* Draw darkness masks on locked levels (offset for centering) */
@@ -220,9 +281,9 @@ void menu_render(const Game* game) {
     }
 
     /* Draw highlight on hovered button (offset for centering) */
-    if (m->hover_button >= 0) {
-        AlphaBlit(MENU_OFFSET_X + BUTTONS[m->hover_button].mask_x,
-                 MENU_OFFSET_Y + BUTTONS[m->hover_button].mask_y,
+    if (menu->hover_button >= 0) {
+        AlphaBlit(MENU_OFFSET_X + BUTTONS[menu->hover_button].mask_x,
+                 MENU_OFFSET_Y + BUTTONS[menu->hover_button].mask_y,
                  random_mask, MASK_WIDTH, MASK_HEIGHT);
     }
 
@@ -234,22 +295,22 @@ void menu_render(const Game* game) {
     }
 
     /* Apply fade effect to full screen */
-    if (m->phase == MENU_PHASE_FADE_IN || m->phase == MENU_PHASE_FADE_OUT) {
+    if (menu->phase == MENU_PHASE_FADE_IN || menu->phase == MENU_PHASE_FADE_OUT) {
         float progress;
-        if (m->phase == MENU_PHASE_FADE_IN) {
-            progress = (float)m->fade_frame / m->fade_total;
+        if (menu->phase == MENU_PHASE_FADE_IN) {
+            progress = (float)menu->fade_frame / menu->fade_total;
         } else {
-            progress = 1.0f - (float)m->fade_frame / m->fade_total;
+            progress = 1.0f - (float)menu->fade_frame / menu->fade_total;
         }
 
         /* Apply fade by darkening each pixel */
         uint8_t brightness = (uint8_t)(progress * 255);
         for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
-            uint32_t pixel = ScreenOff[i];
+            uint32_t pixel = screen[i];
             uint8_t r = ((pixel >> 16) & 0xFF) * brightness / 255;
             uint8_t g = ((pixel >> 8) & 0xFF) * brightness / 255;
             uint8_t b = (pixel & 0xFF) * brightness / 255;
-            ScreenOff[i] = (pixel & 0xFF000000) | (r << 16) | (g << 8) | b;
+            screen[i] = (pixel & 0xFF000000) | (r << 16) | (g << 8) | b;
         }
     }
 

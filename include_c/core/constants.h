@@ -39,7 +39,7 @@
 #define MINIMAP_Y               20
 
 /* Visual effects */
-#define SHAKE_INTENSITY         40      /* Pixels of screen shake */
+#define SHAKE_INTENSITY         40      /* Pixels of screen shake (+-20px per frame, cumulative) */
 
 /*============================================================================
  * PLAYER

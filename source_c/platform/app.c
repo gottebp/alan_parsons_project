@@ -10,6 +10,8 @@
 #include "../../include_c/platform/platform.h"
 #include "../../include_c/game/game.h"
 #include "../../include_c/game/sprites.h"
+#include "../../include_c/game/audio_bridge.h"
+#include "../../include_c/core/constants.h"
 
 #include <SDL.h>
 #include <SDL_mixer.h>
@@ -30,6 +32,8 @@
 extern int InitGraphics(int fullscreen);
 extern void DestroyGraphics(void);
 extern uint32_t* ScreenOff;
+extern uint32_t ScreenTemp[];
+extern SDL_Window* screen_window;
 extern SDL_Renderer* screen_renderer;
 extern SDL_Texture* screen_texture;
 extern void UpdateScreen(void);
@@ -45,7 +49,7 @@ extern void sseMemcpy32(uint32_t* dst, const uint32_t* src, int count);
 /* Map engine - from mapeng.c */
 extern void InitMapEngine(void);
 extern void DestroyMapEngine(void);
-extern void LoadMap(const char* filename);
+extern int LoadMap(const char* filename);
 
 /* Input - from input.c */
 extern uint8_t KEYBOARD[320];
@@ -225,10 +229,6 @@ static void load_audio_assets(App* app) {
     a->snd_hit = Mix_LoadWAV("./sound/hit.wav");
     a->snd_evil_laugh = Mix_LoadWAV("./sound/evil_laugh.wav");
 
-    /* Set global pointers for legacy modules */
-    snd_effect_hit = a->snd_hit;
-    snd_effect_evil_laugh = a->snd_evil_laugh;
-
     if (a->snd_hit) Mix_VolumeChunk(a->snd_hit, 10);
     if (a->snd_weapon) Mix_VolumeChunk(a->snd_weapon, 80);
 
@@ -240,7 +240,16 @@ static void load_audio_assets(App* app) {
         if (a->snd_explosion[i]) {
             Mix_VolumeChunk(a->snd_explosion[i], 128);
         }
-        /* Set global pointer for legacy modules */
+    }
+
+    /* Set audio context for audio_bridge (replaces global pointers) */
+    audio_bridge_set_context(a->snd_hit, a->snd_evil_laugh, a->snd_explosion,
+                             a->snd_engines, a->snd_weapon);
+
+    /* Legacy global pointers (kept for now, can be removed later) */
+    snd_effect_hit = a->snd_hit;
+    snd_effect_evil_laugh = a->snd_evil_laugh;
+    for (int i = 0; i < 5; i++) {
         snd_effect_explosion[i] = a->snd_explosion[i];
     }
 
@@ -256,16 +265,48 @@ static void load_audio_assets(App* app) {
     a->weapon_cooldown = 0;
 }
 
+/*
+ * Save progress - overrides weak stub in game.c
+ * Called from game_check_outcome when player beats a frontier level
+ */
+void game_save_progress(const Game* game) {
+    /* Sync global game_level from game struct */
+    game_level = game->unlocked_level;
+
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        console.log('[SAVE] level=' + $0 + ' weapons=' + $1);
+        localStorage.setItem('alan_parsons_level', $0);
+        localStorage.setItem('alan_parsons_weapons', $1);
+    }, game->unlocked_level, game->weapons_level);
+#else
+    {
+        FILE* fp = fopen("level.dat", "wb");
+        if (fp) {
+            int level = game->unlocked_level;
+            int weapons = game->weapons_level;
+            fwrite(&level, sizeof(int), 1, fp);
+            fwrite(&weapons, sizeof(int), 1, fp);
+            fclose(fp);
+        }
+    }
+#endif
+}
+
 static void load_progress(App* app) {
     (void)app;  /* Used in Emscripten build */
 #ifdef __EMSCRIPTEN__
     game_level = EM_ASM_INT({
         var saved = localStorage.getItem('alan_parsons_level');
-        return saved ? parseInt(saved) : 0;
+        var val = saved ? parseInt(saved) : 0;
+        console.log('[LOAD] alan_parsons_level raw=' + saved + ' parsed=' + val);
+        return val;
     });
     intPlayerWeaponsLevel = EM_ASM_INT({
         var saved = localStorage.getItem('alan_parsons_weapons');
-        return saved ? parseInt(saved) : 0;
+        var val = saved ? parseInt(saved) : 0;
+        console.log('[LOAD] alan_parsons_weapons raw=' + saved + ' parsed=' + val);
+        return val;
     });
     int cp_mode = EM_ASM_INT({
         return localStorage.getItem('alan_parsons_captain_planet') === '1' ? 1 : 0;
@@ -292,6 +333,23 @@ int app_init(App* app, int argc, char** argv) {
         fprintf(stderr, "Failed to initialize graphics\n");
         return -1;
     }
+
+    /* Capture rendering resources into RenderContext
+     * (globals still work for backward compatibility) */
+    app->render.screen = ScreenOff;
+    app->render.temp = ScreenTemp;
+    app->render.window = screen_window;
+    app->render.renderer = screen_renderer;
+    app->render.texture = screen_texture;
+    app->render.width = SCREEN_WIDTH;
+    app->render.height = SCREEN_HEIGHT;
+
+    /* Initialize render module with context */
+    extern void render_set_context(uint32_t* screen, uint32_t* temp, void* renderer, void* texture, int width, int height);
+    render_set_context(app->render.screen, app->render.temp, app->render.renderer, app->render.texture, app->render.width, app->render.height);
+
+    /* Initialize menu module with context */
+    menu_set_render_context(app->render.screen);
 
     /* Initialize map engine */
     InitMapEngine();
@@ -419,6 +477,19 @@ void app_frame_end(App* app) {
 }
 
 /*============================================================================
+ * RENDER OPERATIONS
+ *============================================================================*/
+
+void app_clear_screen(App* app, uint32_t color) {
+    sseMemset32(app->render.screen, color, app->render.width * app->render.height);
+}
+
+void app_present(App* app) {
+    (void)app;  /* TODO: Use app->render when UpdateScreen takes context */
+    UpdateScreen();
+}
+
+/*============================================================================
  * INPUT
  *============================================================================*/
 
@@ -468,7 +539,6 @@ void app_load_level(App* app, int level_id) {
 
     /* Configure and start level (sets current_level_idx and outcome_timer) */
     app->game.captain_planet = app->captain_planet;
-    app->game.weapons_level = intPlayerWeaponsLevel;
     game_start_level(&app->game, level_index);
 
     /* Load map */
@@ -490,13 +560,14 @@ void app_load_level(App* app, int level_id) {
         app->ending_timer = 250;
     }
 
-    printf("Loaded level %d\n", level_index);
 }
 
 void app_show_menu(App* app) {
-    /* Quick fade out from current screen */
-    sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
-    FadeToBlack(30, 4);
+    /* Quick fade out from current screen (skip in main loop - menu has its own fades) */
+    if (!app->in_main_loop) {
+        sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
+        FadeToBlack(30, 4);
+    }
 
     /* Transition to non-blocking menu state */
     menu_enter(&app->game);
@@ -512,20 +583,23 @@ void app_handle_menu_result(App* app, int result) {
         /* Quit */
         app->running = 0;
     } else if (result >= 2 && result <= 7) {
-        /* Fade to black before loading level */
-        sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
-        FadeToBlack(100, 3);
+        if (!app->in_main_loop) {
+            /* Fade to black before loading level */
+            sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
+            FadeToBlack(100, 3);
+        }
 
         /* Load level */
         app_load_level(app, result);
 
-        /* Render first frame of level into ScreenOff before fade-in */
-        sseMemset32(ScreenOff, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
-        render_frame(&app->game);
-
-        /* Now fade from black into the rendered level */
-        sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
-        FadeFromBlack(80, 3);
+        if (!app->in_main_loop) {
+            /* Render first frame and fade from black into it */
+            sseMemset32(app->render.screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+            render_frame(&app->game);
+            sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
+            FadeFromBlack(80, 3);
+        }
+        /* In main loop: skip rendering here - main loop handles it next frame */
     }
     /* result == 1 means resume, nothing to do */
 }
@@ -537,8 +611,8 @@ void app_handle_menu_result(App* app, int result) {
 void app_play_level_music(App* app, int level_index) {
     AudioAssets* a = &app->audio;
 
-    /* Free current music */
-    Mix_FadeOutMusic(200);
+    /* Stop current music immediately (avoid potential ASYNCIFY issues with fade) */
+    Mix_HaltMusic();
 
     /* Load if needed */
     if (!a->music_level[level_index]) {
@@ -599,6 +673,11 @@ void app_update_audio(App* app) {
         audio_bridge_nuke_dropped(&app->audio_state);
         app->game.audio_nuke_fired = 0;
     }
+
+    if (app->game.audio_boss_spawned) {
+        audio_bridge_boss_spawned(&app->audio_state);
+        app->game.audio_boss_spawned = 0;
+    }
 }
 
 /*============================================================================
@@ -614,14 +693,14 @@ void app_title_screen(App* app) {
 
     /* Display title screen with fades */
     if (app->visuals.title_screen) {
-        sseMemset32(ScreenOff, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+        sseMemset32(app->render.screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
         AlphaBlit(
             SCREEN_WIDTH / 2 - 480 / 2,
             SCREEN_HEIGHT / 2 - 480 / 2,
             app->visuals.title_screen,
             480, 480
         );
-        sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+        sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
         FadeFromBlack(180, 2);
         FadeToBlack(180, 3);
     }
@@ -629,13 +708,13 @@ void app_title_screen(App* app) {
     /* Show story clip (4th clip) */
     if (app->visuals.story_clips) {
         uint32_t* clip = app->visuals.story_clips + (640 * 480 * 3);
-        sseMemset32(ScreenOff, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+        sseMemset32(app->render.screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
         AlphaBlit(
             SCREEN_WIDTH / 2 - 640 / 2,
             SCREEN_HEIGHT / 2 - 480 / 2,
             clip, 640, 480
         );
-        sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+        sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
         FadeFromBlack(180, 3);
         FadeToBlack(180, 3);
     }
@@ -688,15 +767,15 @@ void app_ending_sequence(App* app) {
     FlushKeyboard();
 
     /* Clip 0 */
-    sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+    sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
     FlushKeyboard();
     FadeToWhite(500, 2);
 
-    sseMemset32(ScreenOff, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+    sseMemset32(app->render.screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
     sseMemset32(ScreenTemp, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
     AlphaBlit(SCREEN_WIDTH / 2 - 320, SCREEN_HEIGHT / 2 - 240,
               app->visuals.story_clips, 640, 480);
-    sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+    sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
     FlushKeyboard();
     FadeFromWhite(300, 2);
 
@@ -705,7 +784,7 @@ void app_ending_sequence(App* app) {
     FadeToWhite(300, 2);
     AlphaBlit(SCREEN_WIDTH / 2 - 320, SCREEN_HEIGHT / 2 - 240,
               app->visuals.story_clips + (640 * 480), 640, 480);
-    sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+    sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
     FlushKeyboard();
     FadeFromWhite(300, 2);
 
@@ -714,7 +793,7 @@ void app_ending_sequence(App* app) {
     FadeToWhite(300, 2);
     AlphaBlit(SCREEN_WIDTH / 2 - 320, SCREEN_HEIGHT / 2 - 240,
               app->visuals.story_clips + (640 * 480 * 2), 640, 480);
-    sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+    sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
     FlushKeyboard();
     FadeFromWhite(300, 2);
 
@@ -755,3 +834,49 @@ void app_ending_sequence(App* app) {
 
     app->in_ending = 0;
 }
+
+/*============================================================================
+ * EMSCRIPTEN RESTART SUPPORT
+ *============================================================================*/
+
+#ifdef __EMSCRIPTEN__
+/* Global app pointer for RestartGame - set by main_pure.c */
+static App* g_restart_app = NULL;
+
+void app_set_restart_pointer(App* app) {
+    g_restart_app = app;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void RestartGame(void) {
+    if (!g_restart_app) return;
+    App* app = g_restart_app;
+
+    printf("Game exited - waiting for user click to restart...\n");
+
+    EM_ASM(
+        window.gameStarted = false;
+    );
+
+    while (1) {
+        int started = EM_ASM_INT({
+            return window.gameStarted ? 1 : 0;
+        });
+        if (started) {
+            printf("Restarting game by user click\n");
+            break;
+        }
+        emscripten_sleep(100);
+    }
+
+    /* Reset game state */
+    app->running = 1;
+    level_is_loaded = 0;
+
+    /* Show title screen with intro (starts music) */
+    app_title_screen(app);
+
+    /* Then go to menu */
+    app_show_menu(app);
+}
+#endif

@@ -477,7 +477,7 @@
             <div id="start-overlay">
                 <div class="start-box">
                     <h2>🎮 Click to Start</h2>
-                    <p>Click anywhere to load &amp; play</p>
+                    <p>Click anywhere to play</p>
                 </div>
             </div>
         </div>
@@ -771,7 +771,9 @@
 
                 statusElement.textContent = text;
 
-                if (text === '') {
+                if (text !== '') {
+                    statusContainer.classList.remove('hidden');
+                } else {
                     statusContainer.classList.add('hidden');
                     fullscreenBtn.classList.remove('hidden');
                     resetBtn.classList.remove('hidden');
@@ -873,21 +875,35 @@
             }, true);
         }
 
+        /* Convert CSS mouse/touch position to game internal coordinates (1280x800) */
+        function cssToLogical(clientX, clientY) {
+            var rect = canvas.getBoundingClientRect();
+            var canvasX = Math.floor((clientX - rect.left) * (canvas.width / rect.width));
+            var canvasY = Math.floor((clientY - rect.top) * (canvas.height / rect.height));
+            return {
+                x: Math.max(0, Math.min(canvas.width - 1, canvasX)),
+                y: Math.max(0, Math.min(canvas.height - 1, canvasY))
+            };
+        }
+
+        /* Mouse move tracking for menu cursor */
+        canvas.addEventListener('mousemove', function(e) {
+            if (!window.gameStarted) return;
+            var pos = cssToLogical(e.clientX, e.clientY);
+            if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_mouse_move) {
+                Module._handle_mouse_move(pos.x, pos.y);
+            }
+        });
+
         /* Touch-to-cursor for menu (tap to move cursor) */
         canvas.addEventListener('touchstart', function(e) {
-            if (!window.gameStarted) return;  /* Only after game starts */
+            if (!window.gameStarted) return;
 
             var touch = e.touches[0];
-            var rect = canvas.getBoundingClientRect();
-            var scaleX = 1280 / rect.width;  /* Canvas internal resolution */
-            var scaleY = 800 / rect.height;
+            var pos = cssToLogical(touch.clientX, touch.clientY);
 
-            var touchX = (touch.clientX - rect.left) * scaleX;
-            var touchY = (touch.clientY - rect.top) * scaleY;
-
-            /* Send touch coordinates to game for menu cursor */
             if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_touch_cursor) {
-                Module._handle_touch_cursor(touchX, touchY, 1);  /* 1 = touch down */
+                Module._handle_touch_cursor(pos.x, pos.y, 1);
             }
 
             e.preventDefault();
@@ -897,7 +913,7 @@
             if (!window.gameStarted) return;
 
             if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_touch_cursor) {
-                Module._handle_touch_cursor(0, 0, 0);  /* 0 = touch up */
+                Module._handle_touch_cursor(0, 0, 0);
             }
 
             e.preventDefault();
@@ -905,13 +921,14 @@
 
         /* Virtual button handlers */
         function setupMobileButtons() {
+            /* SDL scancodes (not JS keyCodes!) - must match KEYBOARD[] indices in C */
             var buttons = {
-                'btn-fire': { key: 88, name: 'X' },        /* X key */
-                'btn-nuke': { key: 32, name: 'Space' },    /* Space key */
-                'btn-strafe-left': { key: 90, name: 'Z' }, /* Z key */
-                'btn-strafe-right': { key: 67, name: 'C' },/* C key */
-                'btn-thrust-up': { key: 38, name: 'Up' },  /* Up arrow */
-                'btn-thrust-down': { key: 40, name: 'Down' } /* Down arrow */
+                'btn-fire': { key: 27, name: 'X' },         /* SDL_SCANCODE_X */
+                'btn-nuke': { key: 44, name: 'Space' },     /* SDL_SCANCODE_SPACE */
+                'btn-strafe-left': { key: 29, name: 'Z' },  /* SDL_SCANCODE_Z */
+                'btn-strafe-right': { key: 6, name: 'C' },  /* SDL_SCANCODE_C */
+                'btn-thrust-up': { key: 82, name: 'Up' },   /* SDL_SCANCODE_UP */
+                'btn-thrust-down': { key: 81, name: 'Down' } /* SDL_SCANCODE_DOWN */
             };
 
             Object.keys(buttons).forEach(function(btnId) {

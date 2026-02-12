@@ -83,8 +83,11 @@ void game_start_level(Game* game, int level_index) {
     game->current_level_idx = level_index;
     game->state = STATE_PLAYING;
     game->outcome_timer = 0;
-    game->shake_frames = 0;
+    game->shake_timer = 0.0f;
+    game->shake_offset_x = 0;
+    game->shake_offset_y = 0;
     game->frame_count = 0;
+    game->accumulator = 0.0f;
 
     game_reset_player(game);
     enemy_pool_clear(&game->enemies);
@@ -96,6 +99,7 @@ void game_start_level(Game* game, int level_index) {
 void game_check_outcome(Game* game) {
     /* Player dead? */
     if (game->player.health <= 0 && game->state == STATE_PLAYING) {
+        player_explode(game);
         game->state = STATE_DEFEAT;
         game->outcome_timer = OUTCOME_DISPLAY_FRAMES;
     }
@@ -117,7 +121,14 @@ void game_check_outcome(Game* game) {
     }
 }
 
-void game_update(Game* game, const InputState* input, float dt) {
+/*
+ * game_tick - One fixed-rate logic step (always called at 1/TARGET_FPS)
+ *
+ * All frame-counted systems (weapon timers, cooldowns, invulnerability,
+ * wave spawning, outcome timer, menu fade) work correctly because
+ * dt is always exactly 1/TARGET_FPS, making scale = dt * TARGET_FPS = 1.0.
+ */
+static void game_tick(Game* game, const InputState* input, float dt) {
     game->frame_count++;
 
     /* Update based on state */
@@ -165,14 +176,27 @@ void game_update(Game* game, const InputState* input, float dt) {
             /* Check outcome */
             game_check_outcome(game);
 
-            /* Screen shake decay */
-            if (game->shake_frames > 0) {
-                game->shake_frames--;
+            /* Screen shake */
+            if (game->shake_timer > 0.0f) {
+                game->shake_timer -= dt;
+                game->shake_offset_x = (int)(game_rand_range(game, SHAKE_INTENSITY)) - (SHAKE_INTENSITY / 2);
+                game->shake_offset_y = (int)(game_rand_range(game, SHAKE_INTENSITY)) - (SHAKE_INTENSITY / 2);
+            } else {
+                game->shake_offset_x = 0;
+                game->shake_offset_y = 0;
             }
             break;
 
         case STATE_VICTORY:
         case STATE_DEFEAT:
+            /* Countdown outcome timer */
+            if (game->outcome_timer > 0) {
+                game->outcome_timer--;
+                if (game->outcome_timer <= 0) {
+                    game->menu_requested = 1;
+                }
+            }
+
             /* Keep player moving - can fly around during victory/defeat */
             player_update(&game->player, input, dt);
 
@@ -193,9 +217,14 @@ void game_update(Game* game, const InputState* input, float dt) {
             /* Continue updating particles */
             particles_update(game, dt);
 
-            /* Screen shake decay */
-            if (game->shake_frames > 0) {
-                game->shake_frames--;
+            /* Screen shake */
+            if (game->shake_timer > 0.0f) {
+                game->shake_timer -= dt;
+                game->shake_offset_x = (int)(game_rand_range(game, SHAKE_INTENSITY)) - (SHAKE_INTENSITY / 2);
+                game->shake_offset_y = (int)(game_rand_range(game, SHAKE_INTENSITY)) - (SHAKE_INTENSITY / 2);
+            } else {
+                game->shake_offset_x = 0;
+                game->shake_offset_y = 0;
             }
             break;
 
@@ -210,6 +239,22 @@ void game_update(Game* game, const InputState* input, float dt) {
         case STATE_ENDING:
             /* Handled by main loop */
             break;
+    }
+}
+
+void game_update(Game* game, const InputState* input, float dt) {
+    const float FIXED_DT = 1.0f / TARGET_FPS;
+
+    game->accumulator += dt;
+
+    /* Cap to prevent spiral of death on lag spikes */
+    if (game->accumulator > 0.25f) {
+        game->accumulator = 0.25f;
+    }
+
+    while (game->accumulator >= FIXED_DT) {
+        game_tick(game, input, FIXED_DT);
+        game->accumulator -= FIXED_DT;
     }
 }
 
@@ -282,13 +327,23 @@ static void player_handle_thrust(Player* p, const InputState* input, float scale
 static void player_handle_strafe(Player* p, const InputState* input, float scale) {
     float accel = p->acceleration * scale;
 
-    if (input->strafe_right && p->strafe_speed < p->max_strafe) {
-        p->strafe_speed += accel;
-        p->turn_direction++;
+    if (input->strafe_right) {
+        if (p->strafe_speed < p->max_strafe) {
+            p->strafe_speed += accel;
+        }
+        /* Show banking sprite while strafe key held (if not turning) */
+        if (p->turn_direction == 0) {
+            p->turn_direction = 1;
+        }
     }
-    if (input->strafe_left && p->strafe_speed > p->min_strafe) {
-        p->strafe_speed -= accel;
-        p->turn_direction--;
+    if (input->strafe_left) {
+        if (p->strafe_speed > p->min_strafe) {
+            p->strafe_speed -= accel;
+        }
+        /* Show banking sprite while strafe key held (if not turning) */
+        if (p->turn_direction == 0) {
+            p->turn_direction = -1;
+        }
     }
 }
 
@@ -486,8 +541,9 @@ void waves_spawn_boss(Game* game) {
     game->enemies.entities[ws->boss_index].active = 1;
     ws->boss_spawned = 1;
 
-    /* Screen shake for boss entrance */
+    /* Boss entrance effects */
     effect_screen_shake(game, 150);
+    game->audio_boss_spawned = 1;
 }
 
 /*============================================================================
@@ -971,7 +1027,12 @@ void enemy_damage(Game* game, Enemy* e, int damage, Vec2 impact_pos) {
 
 void enemy_explode(Game* game, Enemy* e) {
     if (e->size == ENEMY_SIZE_BOSS) {
+        /* Massive explosion for boss death */
         effect_explosion_large(game, e->position);
+        effect_explosion_large(game, e->position);
+        effect_explosion_small(game, e->position);
+        effect_explosion_small(game, e->position);
+        effect_screen_shake(game, 180);
     } else {
         effect_explosion_small(game, e->position);
     }
@@ -982,7 +1043,10 @@ void enemy_explode(Game* game, Enemy* e) {
  *============================================================================*/
 
 void effect_screen_shake(Game* game, int frames) {
-    game->shake_frames = frames;
+    float seconds = (float)frames / TARGET_FPS;
+    if (seconds > game->shake_timer) {
+        game->shake_timer = seconds;
+    }
 }
 
 void effect_explosion_small(Game* game, Vec2 position) {

@@ -12,10 +12,35 @@
 #include <string.h>
 
 /*============================================================================
- * EXTERNAL DECLARATIONS - Legacy Graphics System
+ * RENDER CONTEXT - Internal state set by render_set_context()
+ * This replaces direct use of globals, allowing clean initialization.
  *============================================================================*/
 
-/* Screen buffer - from sdl_wrapper.c */
+static uint32_t* r_screen = NULL;      /* Screen buffer */
+static uint32_t* r_temp = NULL;        /* Temp buffer for fades */
+static SDL_Renderer* r_renderer = NULL; /* SDL renderer */
+static SDL_Texture* r_texture = NULL;   /* Screen texture */
+static int r_width = 0;
+static int r_height = 0;
+static int r_initialized = 0;
+
+void render_set_context(uint32_t* screen, uint32_t* temp, void* renderer, void* texture, int width, int height) {
+    r_screen = screen;
+    r_temp = temp;
+    r_renderer = (SDL_Renderer*)renderer;
+    r_texture = (SDL_Texture*)texture;
+    r_width = width;
+    r_height = height;
+    r_initialized = 1;
+}
+
+/*============================================================================
+ * EXTERNAL DECLARATIONS - Legacy Graphics System
+ * NOTE: These are kept for backward compatibility during migration.
+ * New code should use the render context above.
+ *============================================================================*/
+
+/* Screen buffer - from sdl_wrapper.c (fallback if context not set) */
 extern uint32_t* ScreenOff;
 
 /* Alpha blitting - from sdl_wrapper.c */
@@ -47,27 +72,12 @@ extern uint32_t Rand(void);
  *============================================================================*/
 
 void render_map(const Game* game) {
-    if (!game || !MapOff || !ScreenOff) return;
+    /* Use context if set, otherwise fall back to global */
+    uint32_t* screen = r_initialized ? r_screen : ScreenOff;
+    if (!game || !MapOff || !screen) return;
 
-    /* Get camera position from player */
-    int cam_x = (int)game->player.position.x;
-    int cam_y = (int)game->player.position.y;
-
-    /* Apply screen shake effect */
-    if (game->shake_frames > 0) {
-        #define SHAKE_FACTOR 16
-        int shake_x = (int)(Rand() % SHAKE_FACTOR) - (SHAKE_FACTOR / 2);
-        int shake_y = (int)(Rand() % SHAKE_FACTOR) - (SHAKE_FACTOR / 2);
-        cam_x += shake_x;
-        cam_y += shake_y;
-
-        /* Wrap camera position */
-        if (cam_x < 0) cam_x += MAP_WIDTH;
-        if (cam_x >= MAP_WIDTH) cam_x -= MAP_WIDTH;
-        if (cam_y < 0) cam_y += MAP_HEIGHT;
-        if (cam_y >= MAP_HEIGHT) cam_y -= MAP_HEIGHT;
-        #undef SHAKE_FACTOR
-    }
+    int cam_x = (int)game->player.position.x + game->shake_offset_x;
+    int cam_y = (int)game->player.position.y + game->shake_offset_y;
 
     /* Calculate boundary offsets for toroidal wrapping */
     int top_offset = (cam_x - (SCREEN_WIDTH / 2)) * 4;
@@ -88,7 +98,7 @@ void render_map(const Game* game) {
 
         /* Copy scanline from map to screen */
         uint32_t* src = (uint32_t*)((uint8_t*)MapOff + map_offset);
-        uint32_t* dst = ScreenOff + (y * SCREEN_WIDTH);
+        uint32_t* dst = screen + (y * SCREEN_WIDTH);
 
         sseMemcpy32(dst, src, SCREEN_WIDTH);
 
@@ -125,7 +135,7 @@ void render_player(const Game* game) {
     /* Get sprite for this angle */
     uint32_t* frame_data = sprite + (frame * PLAYER_WIDTH * PLAYER_HEIGHT);
 
-    /* Calculate screen position (center player on screen) */
+    /* Player is always centered on screen */
     int screen_x = (SCREEN_WIDTH / 2) - (PLAYER_WIDTH / 2);
     int screen_y = (SCREEN_HEIGHT / 2) - (PLAYER_HEIGHT / 2);
 
@@ -221,9 +231,8 @@ static void render_single_enemy(const Enemy* e, int cam_x, int cam_y) {
 void render_enemies(const Game* game) {
     if (!game) return;
 
-    /* Camera is at player position */
-    int cam_x = (int)game->player.position.x;
-    int cam_y = (int)game->player.position.y;
+    int cam_x = (int)game->player.position.x + game->shake_offset_x;
+    int cam_y = (int)game->player.position.y + game->shake_offset_y;
 
     /* Iterate through enemy pool */
     for (int i = 0; i < MAX_ENEMIES; i++) {
@@ -237,41 +246,46 @@ void render_enemies(const Game* game) {
  * MINIMAP RENDERING FROM GAME STRUCT
  *============================================================================*/
 
-/* Helper: draw a single minimap object */
-static void minimap_draw_object(int world_x, int world_y,
-                                uint32_t color1, uint32_t color2, int is_boss) {
-    /* Scale world coordinates to minimap coordinates */
-    int map_x = (world_x / (MAP_WIDTH / MINIMAP_WIDTH)) + MINIMAP_X;
-    int map_y = (world_y / (MAP_HEIGHT / MINIMAP_HEIGHT)) + MINIMAP_Y;
+/* Helper: convert world coords to minimap pixel, return 0 if out of bounds */
+static int minimap_coords(int world_x, int world_y, int margin, int* mx, int* my) {
+    *mx = (world_x / (MAP_WIDTH / MINIMAP_WIDTH)) + MINIMAP_X;
+    *my = (world_y / (MAP_HEIGHT / MINIMAP_HEIGHT)) + MINIMAP_Y;
+    return (*mx >= MINIMAP_X + margin && *mx < MINIMAP_X + MINIMAP_WIDTH - margin &&
+            *my >= MINIMAP_Y + margin && *my < MINIMAP_Y + MINIMAP_HEIGHT - margin);
+}
 
-    /* Bounds check */
-    if (map_x < MINIMAP_X + 2 || map_x >= MINIMAP_X + MINIMAP_WIDTH - 2 ||
-        map_y < MINIMAP_Y + 2 || map_y >= MINIMAP_Y + MINIMAP_HEIGHT - 2) {
-        return;
+/* Draw a filled square dot: size = (2r-1) x (2r-1) pixels */
+static void minimap_draw_dot(int world_x, int world_y,
+                             uint32_t color, int radius, uint32_t* screen) {
+    int mx, my;
+    if (!minimap_coords(world_x, world_y, radius, &mx, &my)) return;
+    for (int dy = -(radius - 1); dy <= (radius - 1); dy++) {
+        for (int dx = -(radius - 1); dx <= (radius - 1); dx++) {
+            int offset = (my + dy) * SCREEN_WIDTH + (mx + dx);
+            screen[offset] = ComputeAlpha(color, screen[offset]);
+        }
     }
+}
 
-    int offset = map_y * SCREEN_WIDTH + map_x;
-
-    /* Draw center cross */
-    ScreenOff[offset] = ComputeAlpha(color1, ScreenOff[offset]);
-    ScreenOff[offset - 1] = ComputeAlpha(color1, ScreenOff[offset - 1]);
-    ScreenOff[offset + 1] = ComputeAlpha(color1, ScreenOff[offset + 1]);
-    ScreenOff[offset - SCREEN_WIDTH] = ComputeAlpha(color1, ScreenOff[offset - SCREEN_WIDTH]);
-    ScreenOff[offset + SCREEN_WIDTH] = ComputeAlpha(color1, ScreenOff[offset + SCREEN_WIDTH]);
-
-    /* Draw extended pixels */
-    ScreenOff[offset - 2] = ComputeAlpha(color2, ScreenOff[offset - 2]);
-    ScreenOff[offset + 2] = ComputeAlpha(color2, ScreenOff[offset + 2]);
-
-    /* Larger pattern for bosses */
-    if (is_boss) {
-        ScreenOff[offset - 3] = ComputeAlpha(color1, ScreenOff[offset - 3]);
-        ScreenOff[offset + 3] = ComputeAlpha(color1, ScreenOff[offset + 3]);
+/* Draw a + cross: arm length = (2r-1) pixels */
+static void minimap_draw_cross(int world_x, int world_y,
+                               uint32_t color, int radius, uint32_t* screen) {
+    int mx, my;
+    if (!minimap_coords(world_x, world_y, radius, &mx, &my)) return;
+    for (int d = -(radius - 1); d <= (radius - 1); d++) {
+        int h = my * SCREEN_WIDTH + (mx + d);
+        int v = (my + d) * SCREEN_WIDTH + mx;
+        screen[h] = ComputeAlpha(color, screen[h]);
+        screen[v] = ComputeAlpha(color, screen[v]);
     }
 }
 
 void render_minimap(const Game* game) {
     if (!game || game->player.health <= 0) return;
+
+    /* Use context if set, otherwise fall back to global */
+    uint32_t* screen = r_initialized ? r_screen : ScreenOff;
+    if (!screen) return;
 
     /* Draw semi-transparent dark background */
     uint32_t dark_overlay = 0x80000000;
@@ -280,21 +294,21 @@ void render_minimap(const Game* game) {
         for (int col = 0; col < MINIMAP_WIDTH; col++) {
             int x = MINIMAP_X + col;
             int offset = y * SCREEN_WIDTH + x;
-            ScreenOff[offset] = ComputeAlpha(dark_overlay, ScreenOff[offset]);
+            screen[offset] = ComputeAlpha(dark_overlay, screen[offset]);
         }
     }
 
-    /* Draw player (bright green for visibility) */
-    minimap_draw_object((int)game->player.position.x, (int)game->player.position.y,
-                        0xFF00FF00, 0xFF80FF80, 1);
+    /* Draw player (bright green dot, 3x3) */
+    minimap_draw_dot((int)game->player.position.x, (int)game->player.position.y,
+                     0xFF00FF00, 2, screen);
 
-    /* Draw enemies (red) */
+    /* Draw enemies (red +, larger for bosses) */
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Enemy* e = &game->enemies.entities[i];
         if (!e->active) continue;
-        int is_boss = (e->size == ENEMY_SIZE_BOSS) ? 1 : 0;
-        minimap_draw_object((int)e->position.x, (int)e->position.y,
-                           0xA0FF0000, 0xA0FFFFFF, is_boss);
+        int radius = (e->size == ENEMY_SIZE_BOSS) ? 4 : 3;
+        minimap_draw_cross((int)e->position.x, (int)e->position.y,
+                           0xFFFF0000, radius, screen);
     }
 }
 
@@ -304,6 +318,10 @@ void render_minimap(const Game* game) {
 
 void render_health_bar(const Game* game) {
     if (!game || game->player.health <= 0) return;
+
+    /* Use context if set, otherwise fall back to global */
+    uint32_t* screen = r_initialized ? r_screen : ScreenOff;
+    if (!screen) return;
 
     int health = game->player.health;
     if (health > PLAYER_MAX_HEALTH) health = PLAYER_MAX_HEALTH;
@@ -319,7 +337,7 @@ void render_health_bar(const Game* game) {
         for (int col = 0; col < bar_width; col++) {
             int x = 15 + col;
             int offset = y * SCREEN_WIDTH + x;
-            ScreenOff[offset] = ComputeAlpha(bar_color, ScreenOff[offset]);
+            screen[offset] = ComputeAlpha(bar_color, screen[offset]);
         }
     }
 }
@@ -370,13 +388,15 @@ extern SDL_Texture* LargeParticleTexture;
 
 void render_particles_hw(const Game* game) {
     if (!game) return;
-    if (!SmallParticleTexture || !LargeParticleTexture || !screen_renderer) {
+
+    /* Use context if set, otherwise fall back to global */
+    SDL_Renderer* renderer = r_initialized ? r_renderer : screen_renderer;
+    if (!SmallParticleTexture || !LargeParticleTexture || !renderer) {
         return;  /* Textures not loaded yet */
     }
 
-    /* Camera is at player position */
-    int cam_x = (int)game->player.position.x;
-    int cam_y = (int)game->player.position.y;
+    int cam_x = (int)game->player.position.x + game->shake_offset_x;
+    int cam_y = (int)game->player.position.y + game->shake_offset_y;
 
     /* Iterate through particle pool directly */
     for (int i = 0; i < MAX_PARTICLES; i++) {
@@ -434,7 +454,7 @@ void render_particles_hw(const Game* game) {
         }
 
         /* Hardware-accelerated blit with alpha blending */
-        SDL_RenderCopy(screen_renderer, tex, &src_rect, &dst_rect);
+        SDL_RenderCopy(renderer, tex, &src_rect, &dst_rect);
     }
 }
 
@@ -446,20 +466,26 @@ void render_particles_hw(const Game* game) {
  *============================================================================*/
 
 extern SDL_Texture* screen_texture;
+extern SDL_Renderer* screen_renderer;
 
 void render_present(const Game* game) {
-    if (!game || !screen_texture || !screen_renderer) return;
+    /* Use context if set, otherwise fall back to globals */
+    uint32_t* screen = r_initialized ? r_screen : ScreenOff;
+    SDL_Texture* texture = r_initialized ? r_texture : screen_texture;
+    SDL_Renderer* renderer = r_initialized ? r_renderer : screen_renderer;
+
+    if (!game || !texture || !renderer) return;
 
     /* Upload software-rendered content to GPU */
-    SDL_UpdateTexture(screen_texture, NULL, ScreenOff, SCREEN_WIDTH * sizeof(uint32_t));
-    SDL_RenderClear(screen_renderer);
-    SDL_RenderCopy(screen_renderer, screen_texture, NULL, NULL);
+    SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(uint32_t));
+    SDL_RenderClear(renderer);
+    SDL_RenderCopy(renderer, texture, NULL, NULL);
 
     /* Render particles using hardware acceleration directly from Game struct */
     render_particles_hw(game);
 
     /* Present to screen */
-    SDL_RenderPresent(screen_renderer);
+    SDL_RenderPresent(renderer);
 }
 
 void render_frame(const Game* game) {

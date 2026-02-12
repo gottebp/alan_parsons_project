@@ -10,20 +10,38 @@
 #include <stdlib.h>
 
 /*============================================================================
- * EXTERNAL SOUND RESOURCES (from main.c)
+ * AUDIO CONTEXT - Set by audio_bridge_set_context()
  *============================================================================*/
 
+static Mix_Chunk* ab_snd_hit = NULL;
+static Mix_Chunk* ab_snd_explosion[5] = {NULL, NULL, NULL, NULL, NULL};
+static Mix_Chunk* ab_snd_evil_laugh = NULL;
+static Mix_Chunk* ab_snd_engines = NULL;
+static Mix_Chunk* ab_snd_weapon = NULL;
+static int ab_initialized = 0;
+
+void audio_bridge_set_context(void* hit, void* evil_laugh, void* explosion[5], void* engines, void* weapon) {
+    ab_snd_hit = (Mix_Chunk*)hit;
+    ab_snd_evil_laugh = (Mix_Chunk*)evil_laugh;
+    ab_snd_engines = (Mix_Chunk*)engines;
+    ab_snd_weapon = (Mix_Chunk*)weapon;
+    for (int i = 0; i < 5; i++) {
+        ab_snd_explosion[i] = explosion ? (Mix_Chunk*)explosion[i] : NULL;
+    }
+    ab_initialized = 1;
+}
+
+/* Legacy fallback (for compatibility during transition) */
 extern Mix_Chunk* snd_effect_hit;
 extern Mix_Chunk* snd_effect_explosion[5];
 extern Mix_Chunk* snd_effect_evil_laugh;
 
-/* Sound counters for looping control (from main.c) */
-extern int snd_engines_counter;
-extern int snd_weapon_counter;
+static Mix_Chunk* get_snd_hit(void) { return ab_initialized ? ab_snd_hit : snd_effect_hit; }
+static Mix_Chunk* get_snd_evil_laugh(void) { return ab_initialized ? ab_snd_evil_laugh : snd_effect_evil_laugh; }
+static Mix_Chunk* get_snd_explosion(int i) { return ab_initialized ? ab_snd_explosion[i] : snd_effect_explosion[i]; }
+static Mix_Chunk* get_snd_engines(void) { return ab_snd_engines; }
+static Mix_Chunk* get_snd_weapon(void) { return ab_snd_weapon; }
 
-/* Engine and weapon sounds need to be loaded */
-static Mix_Chunk* snd_effect_engines = NULL;
-static Mix_Chunk* snd_effect_weapon = NULL;
 static int sounds_loaded = 0;
 
 /*============================================================================
@@ -38,13 +56,13 @@ void audio_bridge_init(AudioBridgeState* state) {
     state->current_level_music = -1;
     state->music_playing = 0;
 
-    /* Load sounds if not already loaded */
-    if (!sounds_loaded) {
-        snd_effect_engines = Mix_LoadWAV("./sound/engines.wav");
-        snd_effect_weapon = Mix_LoadWAV("./sound/weapon.wav");
+    /* Load engine/weapon sounds if context not set and not already loaded */
+    if (!ab_initialized && !sounds_loaded) {
+        ab_snd_engines = Mix_LoadWAV("./sound/engines.wav");
+        ab_snd_weapon = Mix_LoadWAV("./sound/weapon.wav");
 
-        if (snd_effect_weapon) {
-            Mix_VolumeChunk(snd_effect_weapon, 80);
+        if (ab_snd_weapon) {
+            Mix_VolumeChunk(ab_snd_weapon, 80);
         }
 
         sounds_loaded = 1;
@@ -74,8 +92,9 @@ void audio_bridge_update(AudioBridgeState* state, const Game* game, const InputS
 
     /* Handle weapon sound */
     if (input->fire && game->player.health > 0) {
-        if (!state->weapon_firing && snd_effect_weapon) {
-            Mix_PlayChannelTimed(1, snd_effect_weapon, -1, -1);
+        Mix_Chunk* weapon = get_snd_weapon();
+        if (!state->weapon_firing && weapon) {
+            Mix_PlayChannelTimed(1, weapon, -1, -1);
             state->weapon_firing = 1;
         }
     } else {
@@ -87,8 +106,9 @@ void audio_bridge_update(AudioBridgeState* state, const Game* game, const InputS
 
     /* Handle engine sound */
     if (input->up && game->player.health > 0) {
-        if (!state->engine_thrusting && snd_effect_engines) {
-            Mix_PlayChannelTimed(3, snd_effect_engines, -1, -1);
+        Mix_Chunk* engines = get_snd_engines();
+        if (!state->engine_thrusting && engines) {
+            Mix_PlayChannelTimed(3, engines, -1, -1);
             state->engine_thrusting = 1;
         }
     } else {
@@ -117,8 +137,9 @@ void audio_bridge_update(AudioBridgeState* state, const Game* game, const InputS
 
 void audio_bridge_player_hit(AudioBridgeState* state) {
     (void)state;  /* Could use for debouncing */
-    if (snd_effect_hit) {
-        Mix_PlayChannel(-1, snd_effect_hit, 0);
+    Mix_Chunk* hit = get_snd_hit();
+    if (hit) {
+        Mix_PlayChannel(-1, hit, 0);
     }
 }
 
@@ -127,8 +148,9 @@ void audio_bridge_enemy_destroyed(AudioBridgeState* state) {
 
     /* Play random explosion sound */
     int which = rand() % 5;
-    if (snd_effect_explosion[which]) {
-        Mix_PlayChannel(-1, snd_effect_explosion[which], 0);
+    Mix_Chunk* explosion = get_snd_explosion(which);
+    if (explosion) {
+        Mix_PlayChannel(-1, explosion, 0);
     }
 }
 
@@ -136,8 +158,9 @@ void audio_bridge_nuke_dropped(AudioBridgeState* state) {
     (void)state;
 
     /* Play the biggest explosion sound */
-    if (snd_effect_explosion[4]) {
-        Mix_PlayChannel(-1, snd_effect_explosion[4], 0);
+    Mix_Chunk* explosion = get_snd_explosion(4);
+    if (explosion) {
+        Mix_PlayChannel(-1, explosion, 0);
     }
 }
 
@@ -168,6 +191,16 @@ void audio_bridge_level_start(AudioBridgeState* state, int level_index) {
     }
 }
 
+void audio_bridge_boss_spawned(AudioBridgeState* state) {
+    (void)state;
+
+    /* Play evil laugh when boss appears */
+    Mix_Chunk* laugh = get_snd_evil_laugh();
+    if (laugh) {
+        Mix_PlayChannel(-1, laugh, 0);
+    }
+}
+
 void audio_bridge_victory(AudioBridgeState* state) {
     (void)state;
     /* Victory doesn't have a specific sound in original */
@@ -177,8 +210,9 @@ void audio_bridge_defeat(AudioBridgeState* state) {
     (void)state;
 
     /* Play evil laugh on defeat */
-    if (snd_effect_evil_laugh) {
-        Mix_PlayChannel(-1, snd_effect_evil_laugh, 0);
+    Mix_Chunk* laugh = get_snd_evil_laugh();
+    if (laugh) {
+        Mix_PlayChannel(-1, laugh, 0);
     }
 }
 

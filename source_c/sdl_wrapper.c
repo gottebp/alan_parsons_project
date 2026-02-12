@@ -32,12 +32,15 @@ int InitGraphics(int fullscreen) {
     /* EMSCRIPTEN: Disable vsync hint to prevent eglSwapInterval errors
      * Frame timing is controlled by emscripten_set_main_loop instead */
     SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
-#endif
 
     uint32_t flags = SDL_WINDOW_SHOWN;
+    (void)fullscreen;  /* Browser controls sizing */
+#else
+    uint32_t flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
     if (fullscreen) {
-        flags |= SDL_WINDOW_FULLSCREEN;
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
+#endif
 
     screen_window = SDL_CreateWindow(
         "The Alan Parsons Project",
@@ -65,6 +68,9 @@ int InitGraphics(int fullscreen) {
         fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
         return -1;
     }
+
+    SDL_RenderSetLogicalSize(screen_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 
     screen_texture = SDL_CreateTexture(
         screen_renderer,

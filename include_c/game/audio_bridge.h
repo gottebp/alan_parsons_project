@@ -35,6 +35,9 @@ typedef struct {
  * INITIALIZATION
  *============================================================================*/
 
+/* Set the audio context (call once during app init) */
+void audio_bridge_set_context(void* hit, void* evil_laugh, void* explosion[5], void* engines, void* weapon);
+
 /* Initialize audio bridge state */
 void audio_bridge_init(AudioBridgeState* state);
 
@@ -61,6 +64,9 @@ void audio_bridge_enemy_destroyed(AudioBridgeState* state);
 
 /* Nuke was dropped */
 void audio_bridge_nuke_dropped(AudioBridgeState* state);
+
+/* Boss appeared */
+void audio_bridge_boss_spawned(AudioBridgeState* state);
 
 /* Level started - play appropriate music */
 void audio_bridge_level_start(AudioBridgeState* state, int level_index);

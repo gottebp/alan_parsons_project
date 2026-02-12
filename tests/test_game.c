@@ -272,7 +272,7 @@ TEST(effect_screen_shake) {
     Game* game = create_test_game();
 
     effect_screen_shake(game, 100);
-    TEST_ASSERT_EQ(100, game->shake_frames);
+    TEST_ASSERT(game->shake_timer > 1.0f);  /* 100 frames at 60fps ≈ 1.67s */
 }
 
 TEST(effect_explosion_small_creates_particles) {
