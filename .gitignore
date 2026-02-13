@@ -1,9 +1,13 @@
 # Build artifacts
 *.o
+*.obj
 *.exe
 alan_parsons_c
 alan_parsons
 alan_parsons_pure
+win_app
+linux32_app
+macos_app
 
 # WASM build output
 wasm_build/

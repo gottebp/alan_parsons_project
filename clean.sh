@@ -6,9 +6,12 @@ echo "Cleaning build artifacts..."
 # Object files
 rm -f source_c/*.o
 rm -f source_c/**/*.o
+rm -f source/*.obj
+rm -f source/*.o
 
 # Native executables
-rm -f alan_parsons_c alan_parsons
+rm -f alan_parsons_c alan_parsons alan_parsons_pure
+rm -f win_app linux32_app macos_app
 
 # Test binaries and debug symbols
 rm -f tests/test_game tests/test_playthrough tests/test_pool tests/test_render tests/test_vec2
