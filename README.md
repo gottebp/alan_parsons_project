@@ -27,13 +27,20 @@ make -f Makefile.c
 # Requires Emscripten SDK
 source /path/to/emsdk/emsdk_env.sh
 
-# Build
-make -f Makefile.emscripten
-
-# Serve locally
-make -f Makefile.emscripten serve
-# Open http://localhost:8000/wasm_build/game.html
+# Build and serve
+./build_wasm.sh
+./host.sh
+# Open http://localhost:8000/game.html
 ```
+
+## Gameplay
+
+- Six levels with increasing difficulty, each ending with a boss fight
+- Weapons upgrade automatically as you progress through levels
+- 6 nukes per level — screen-clearing shockwave
+- **Body collisions**: flying into a small enemy destroys it but deals heavy damage to the player
+- Bosses are immune to body collisions — you must shoot them down
+- Damaged bosses billow smoke when low on health
 
 ## Controls
 
@@ -45,6 +52,8 @@ make -f Makefile.emscripten serve
 | Space | Drop nuke |
 | Escape | Menu |
 | F | Toggle fullscreen |
+
+Mobile (WASM build): tilt to steer, on-screen buttons for fire/nuke/strafe/thrust.
 
 ## Command Line Options
 
@@ -59,7 +68,9 @@ make -f Makefile.emscripten serve
 |---------|--------|-------------|
 | `make -f Makefile.c` | `alan_parsons` | Build game |
 | `make -f Makefile.c test` | | Run test suite |
-| `make -f Makefile.emscripten` | `wasm_build/game.html` | Browser build |
+| `./build_wasm.sh` | `wasm_build/game.html` | Browser build (clean + compress) |
+| `./host.sh` | | Serve WASM build on localhost:8000 |
+| `./clean.sh` | | Remove all build artifacts |
 
 ## Project Structure
 
@@ -97,6 +108,7 @@ See [ROADMAP.md](ROADMAP.md) for the migration plan toward zero globals.
 - **2002**: SDL port for Linux/Windows
 - **2024**: C port with WASM support
 - **2025**: Clean architecture refactoring
+- **2026**: Body collisions, balance tuning, mobile controls
 
 ## Links
 
