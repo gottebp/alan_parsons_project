@@ -215,14 +215,14 @@
         #btn-fire {
             bottom: calc(30px + env(safe-area-inset-bottom, 0px));
             right: calc(30px + env(safe-area-inset-right, 0px));
-            width: 90px;
-            height: 90px;
+            width: 70px;
+            height: 70px;
             border-radius: 50%;
-            font-size: 22px;
+            font-size: 18px;
         }
 
         #btn-nuke {
-            bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+            bottom: calc(120px + env(safe-area-inset-bottom, 0px));
             right: calc(30px + env(safe-area-inset-right, 0px));
             width: 70px;
             height: 70px;
@@ -236,39 +236,35 @@
             background: rgba(255, 74, 74, 0.6);
         }
 
-        /* Strafe buttons - left side (left thumb) */
-        #btn-strafe-left {
-            bottom: calc(30px + env(safe-area-inset-bottom, 0px));
-            left: calc(30px + env(safe-area-inset-left, 0px));
-            width: 70px;
-            height: 70px;
-        }
-
-        #btn-strafe-right {
-            bottom: calc(30px + env(safe-area-inset-bottom, 0px));
-            left: calc(115px + env(safe-area-inset-left, 0px));
-            width: 70px;
-            height: 70px;
-        }
-
-        /* Thrust buttons - hidden by default since tilt handles thrust */
-        #btn-thrust-up,
-        #btn-thrust-down {
-            display: none;
-        }
-
-        /* Tilt indicator */
-        #tilt-indicator {
+        /* Virtual joystick - left side (left thumb) */
+        #joystick-zone {
             position: absolute;
-            top: 20px;
+            bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+            left: calc(20px + env(safe-area-inset-left, 0px));
+            width: 120px;
+            height: 120px;
+            pointer-events: auto;
+            touch-action: none;
+        }
+
+        #joystick-base {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(139, 168, 127, 0.15);
+            border: 2px solid rgba(212, 175, 55, 0.5);
+        }
+
+        #joystick-knob {
+            position: absolute;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(212, 175, 55, 0.6);
+            border: 2px solid rgba(212, 175, 55, 0.9);
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
-            background: rgba(26, 47, 26, 0.8);
-            padding: 10px 20px;
-            border-radius: 8px;
-            border: 1px solid #8ba87f;
-            font-size: 14px;
-            color: #d4af37;
+            transform: translate(-50%, -50%);
             pointer-events: none;
         }
 
@@ -459,14 +455,50 @@
             display: none !important;
         }
 
+        /* Landscape orientation prompt */
+        #rotate-prompt {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a2f1a;
+            color: #f4f4e8;
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #rotate-prompt .rotate-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+
+        #rotate-prompt p {
+            font-size: 1.3em;
+            color: #d4af37;
+            max-width: 300px;
+        }
+
+        @media (orientation: portrait) and (max-width: 1024px) {
+            #rotate-prompt {
+                display: flex;
+            }
+        }
+
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.8em;
             }
 
             #canvas {
-                max-width: 100%;
-                height: auto;
+                width: min(100vw, calc(100vh * 1.6)) !important;
+                height: min(100vh, calc(100vw / 1.6)) !important;
             }
         }
     </style>
@@ -519,15 +551,20 @@
 
         <!-- Mobile touch controls overlay -->
         <div id="mobile-controls">
-            <div id="tilt-indicator">Tilt to Steer</div>
             <div id="btn-menu" class="mobile-btn">MENU</div>
-            <div id="btn-thrust-up" class="mobile-btn">▲<br>Thrust</div>
-            <div id="btn-thrust-down" class="mobile-btn">▼<br>Brake</div>
-            <div id="btn-strafe-left" class="mobile-btn">◄<br>Strafe</div>
-            <div id="btn-strafe-right" class="mobile-btn">►<br>Strafe</div>
+            <div id="joystick-zone">
+                <div id="joystick-base"></div>
+                <div id="joystick-knob"></div>
+            </div>
             <div id="btn-fire" class="mobile-btn">FIRE</div>
             <div id="btn-nuke" class="mobile-btn">NUKE</div>
         </div>
+    </div>
+
+    <!-- Landscape orientation prompt for mobile -->
+    <div id="rotate-prompt">
+        <div class="rotate-icon">&#x21BB;</div>
+        <p>Rotate your device to landscape to play</p>
     </div>
 
     <script type='text/javascript'>
@@ -555,8 +592,21 @@
         /* Mobile controls state */
         var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
         var mobileControls = document.getElementById('mobile-controls');
-        var tiltAlpha = 0;  /* Device orientation left/right tilt */
         var tiltPermissionGranted = false;
+
+        /* Tilt plumb line state */
+        var tiltCalibrated = false;
+        var neutralBeta = 0;
+
+        /* Recalibrate plumb line when landscape orientation flips */
+        window.addEventListener('orientationchange', function() {
+            tiltCalibrated = false;
+        });
+        if (screen.orientation) {
+            screen.orientation.addEventListener('change', function() {
+                tiltCalibrated = false;
+            });
+        }
 
         /* BROWSER FULLSCREEN: Use standard Fullscreen API on container to keep overlay visible */
         function requestFullscreen(event) {
@@ -631,8 +681,24 @@
         /* Attach button handlers */
         document.addEventListener('DOMContentLoaded', function() {
             var fsBtn = document.getElementById('fullscreen-btn');
+            var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
             if (fsBtn) {
-                fsBtn.addEventListener('click', requestFullscreen);
+                if (isIOS) {
+                    if (window.navigator.standalone === true) {
+                        /* Already in standalone/fullscreen mode - hide button */
+                        fsBtn.classList.add('hidden');
+                    } else {
+                        fsBtn.textContent = 'Add to Home Screen for Fullscreen';
+                        fsBtn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            alert('To play fullscreen, tap the Share button (\u2380) in Safari, then \"Add to Home Screen\".');
+                        });
+                    }
+                } else {
+                    fsBtn.addEventListener('click', requestFullscreen);
+                }
             }
 
             var resetBtn = document.getElementById('reset-btn');
@@ -788,7 +854,9 @@
                     statusContainer.classList.remove('hidden');
                 } else {
                     statusContainer.classList.add('hidden');
-                    fullscreenBtn.classList.remove('hidden');
+                    if (!(window.navigator.standalone === true)) {
+                        fullscreenBtn.classList.remove('hidden');
+                    }
                     resetBtn.classList.remove('hidden');
                     controlsDiv.classList.remove('hidden');
                 }
@@ -828,7 +896,7 @@
                             startOrientationListening();
                         } else {
                             console.log('Device orientation permission denied');
-                            alert('Tilt controls require device orientation access. Using touch buttons only.');
+                            alert('Tilt steering requires device orientation access. You can still use the joystick for thrust and strafe.');
                         }
                     })
                     .catch(function(error) {
@@ -841,48 +909,48 @@
             }
         }
 
-        /* Start listening to device orientation */
+        /* Start listening to device orientation
+           Phone held upright in landscape like a steering wheel.
+           Roll (tilting the wheel left/right) = ship rotation. */
         function startOrientationListening() {
             window.addEventListener('deviceorientation', function(event) {
                 if (window.gameStarted && tiltPermissionGranted) {
-                    /* Use gamma for left/right tilt (steering): -90 to 90 degrees */
-                    var gamma = event.gamma || 0;
-                    /* Use beta for forward/back tilt (thrust): -180 to 180 degrees */
-                    /* When phone is held normally (portrait), beta ~90 degrees */
-                    /* Tilt forward (nose down) = beta < 90 = thrust forward */
-                    /* Tilt back (nose up) = beta > 90 = brake */
                     var beta = event.beta || 0;
 
-                    /* Normalize steering to -1 to 1 range */
-                    var steer = gamma / 45;  /* 45 degree max tilt for full turn */
-                    if (Math.abs(steer) < 0.15) steer = 0;  /* Dead zone */
-                    if (steer > 1) steer = 1;
-                    if (steer < -1) steer = -1;
+                    var angle = (screen.orientation && screen.orientation.angle) ||
+                                window.orientation || 0;
 
-                    /* Normalize thrust: beta around 60-90 is neutral (holding phone comfortably) */
-                    /* Tilt forward (beta < 60) = thrust, tilt back (beta > 90) = brake */
-                    var thrust = 0;
-                    var neutralBeta = 75;  /* Neutral position when holding phone */
-                    var betaDiff = neutralBeta - beta;  /* Positive = tilted forward */
-                    thrust = betaDiff / 30;  /* 30 degree range for full thrust */
-                    if (Math.abs(thrust) < 0.2) thrust = 0;  /* Dead zone */
-                    if (thrust > 1) thrust = 1;
-                    if (thrust < -1) thrust = -1;
-
-                    /* Store for display */
-                    tiltAlpha = steer;
-
-                    /* Send both tilt values to game via Emscripten */
-                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_tilt_input) {
-                        Module._handle_tilt_input(steer, thrust);
+                    /* Calibrate plumb line on first event */
+                    if (!tiltCalibrated) {
+                        neutralBeta = beta;
+                        tiltCalibrated = true;
                     }
 
-                    /* Update tilt indicator if visible */
-                    var indicator = document.getElementById('tilt-indicator');
-                    if (indicator) {
-                        var steerDir = steer > 0.15 ? 'Right' : (steer < -0.15 ? 'Left' : 'Center');
-                        var thrustDir = thrust > 0.2 ? 'Thrust' : (thrust < -0.2 ? 'Brake' : 'Idle');
-                        indicator.textContent = steerDir + ' | ' + thrustDir;
+                    /* Roll deviation from neutral, sign-adjusted for landscape */
+                    var rollDev;
+                    if (angle === 90) {
+                        rollDev = beta - neutralBeta;
+                    } else if (angle === -90 || angle === 270) {
+                        rollDev = neutralBeta - beta;
+                    } else {
+                        rollDev = beta - neutralBeta;
+                    }
+
+                    /* 3° dead band, 16° for full steer, linear */
+                    var tiltDead = 3;
+                    var tiltMax = 16;
+                    var absRoll = Math.abs(rollDev);
+                    var steer;
+                    if (absRoll < tiltDead) {
+                        steer = 0;
+                    } else {
+                        steer = ((absRoll - tiltDead) / (tiltMax - tiltDead)) * Math.sign(rollDev);
+                        if (steer > 1) steer = 1;
+                        if (steer < -1) steer = -1;
+                    }
+
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_tilt_input) {
+                        Module._handle_tilt_input(steer, 0);
                     }
                 }
             }, true);
@@ -926,7 +994,9 @@
             if (!window.gameStarted) return;
 
             if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_touch_cursor) {
-                Module._handle_touch_cursor(0, 0, 0);
+                var touch = e.changedTouches[0];
+                var pos = cssToLogical(touch.clientX, touch.clientY);
+                Module._handle_touch_cursor(pos.x, pos.y, 0);
             }
 
             e.preventDefault();
@@ -938,11 +1008,7 @@
             var buttons = {
                 'btn-menu': { key: 41, name: 'Escape' },    /* SDL_SCANCODE_ESCAPE */
                 'btn-fire': { key: 27, name: 'X' },         /* SDL_SCANCODE_X */
-                'btn-nuke': { key: 44, name: 'Space' },     /* SDL_SCANCODE_SPACE */
-                'btn-strafe-left': { key: 29, name: 'Z' },  /* SDL_SCANCODE_Z */
-                'btn-strafe-right': { key: 6, name: 'C' },  /* SDL_SCANCODE_C */
-                'btn-thrust-up': { key: 82, name: 'Up' },   /* SDL_SCANCODE_UP */
-                'btn-thrust-down': { key: 81, name: 'Down' } /* SDL_SCANCODE_DOWN */
+                'btn-nuke': { key: 44, name: 'Space' }      /* SDL_SCANCODE_SPACE */
             };
 
             /* Track active touches per button for touchmove leave detection */
@@ -1004,6 +1070,119 @@
             });
         }
 
+        /* Virtual joystick for thrust/strafe */
+        function setupJoystick() {
+            var zone = document.getElementById('joystick-zone');
+            var base = document.getElementById('joystick-base');
+            var knob = document.getElementById('joystick-knob');
+            var trackingId = null;
+            var centerX = 0;
+            var centerY = 0;
+            var baseRadius = 0;
+            var deadZone = 0.4;
+
+            /* SDL scancodes */
+            var KEY_STRAFE_LEFT = 29;   /* Z */
+            var KEY_STRAFE_RIGHT = 6;   /* C */
+            var KEY_THRUST_UP = 82;     /* Up */
+            var KEY_THRUST_DOWN = 81;   /* Down */
+
+            var pressed = {};
+            pressed[KEY_STRAFE_LEFT] = false;
+            pressed[KEY_STRAFE_RIGHT] = false;
+            pressed[KEY_THRUST_UP] = false;
+            pressed[KEY_THRUST_DOWN] = false;
+
+            function sendKey(scancode, down) {
+                if (pressed[scancode] === !!down) return;
+                pressed[scancode] = !!down;
+                if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
+                    Module._handle_virtual_key(scancode, down ? 1 : 0);
+                }
+            }
+
+            function resetKnob() {
+                knob.style.top = '50%';
+                knob.style.left = '50%';
+                sendKey(KEY_STRAFE_LEFT, false);
+                sendKey(KEY_STRAFE_RIGHT, false);
+                sendKey(KEY_THRUST_UP, false);
+                sendKey(KEY_THRUST_DOWN, false);
+            }
+
+            function handleMove(touchX, touchY) {
+                var dx = touchX - centerX;
+                var dy = touchY - centerY;
+                var dist = Math.sqrt(dx * dx + dy * dy);
+
+                /* Clamp to base radius */
+                if (dist > baseRadius) {
+                    dx = dx / dist * baseRadius;
+                    dy = dy / dist * baseRadius;
+                    dist = baseRadius;
+                }
+
+                /* Position knob */
+                knob.style.left = (50 + (dx / baseRadius) * 50) + '%';
+                knob.style.top = (50 + (dy / baseRadius) * 50) + '%';
+
+                /* Radial dead zone */
+                var nx = dx / baseRadius;
+                var ny = dy / baseRadius;
+                var ndist = Math.sqrt(nx * nx + ny * ny);
+                if (ndist < deadZone) {
+                    sendKey(KEY_STRAFE_LEFT, false);
+                    sendKey(KEY_STRAFE_RIGHT, false);
+                    sendKey(KEY_THRUST_UP, false);
+                    sendKey(KEY_THRUST_DOWN, false);
+                } else {
+                    /* Per-axis thresholds after radial dead zone passes */
+                    sendKey(KEY_STRAFE_LEFT, nx < -deadZone);
+                    sendKey(KEY_STRAFE_RIGHT, nx > deadZone);
+                    sendKey(KEY_THRUST_UP, ny < -deadZone);    /* up on screen = thrust */
+                    sendKey(KEY_THRUST_DOWN, ny > deadZone);
+                }
+            }
+
+            zone.addEventListener('touchstart', function(e) {
+                if (trackingId !== null) return;  /* already tracking a touch */
+                var touch = e.changedTouches[0];
+                trackingId = touch.identifier;
+
+                var rect = base.getBoundingClientRect();
+                centerX = rect.left + rect.width / 2;
+                centerY = rect.top + rect.height / 2;
+                baseRadius = rect.width / 2;
+
+                handleMove(touch.clientX, touch.clientY);
+                e.preventDefault();
+            }, { passive: false });
+
+            zone.addEventListener('touchmove', function(e) {
+                for (var i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === trackingId) {
+                        handleMove(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                        break;
+                    }
+                }
+                e.preventDefault();
+            }, { passive: false });
+
+            function onEnd(e) {
+                for (var i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === trackingId) {
+                        trackingId = null;
+                        resetKnob();
+                        break;
+                    }
+                }
+                e.preventDefault();
+            }
+
+            zone.addEventListener('touchend', onEnd, { passive: false });
+            zone.addEventListener('touchcancel', onEnd, { passive: false });
+        }
+
         /* Populate controls legend based on device type */
         function populateControls() {
             var controlsList = document.getElementById('controls-list');
@@ -1011,20 +1190,20 @@
 
             var html = '';
             if (isTouchDevice) {
-                /* Mobile controls - tilt-based */
-                html = '<li><span class="key">Tilt L/R</span> Steer ship</li>' +
-                       '<li><span class="key">Tilt Fwd/Back</span> Thrust/Brake</li>' +
-                       '<li><span class="key">◄ ►</span> Strafe (left thumb)</li>' +
-                       '<li><span class="key">FIRE</span> Shoot (right thumb)</li>' +
-                       '<li><span class="key">NUKE</span> Launch nuke</li>' +
-                       '<li><span class="key">MENU</span> Return to menu</li>';
+                /* Mobile controls - steering wheel + joystick */
+                html = '<li><span class="key">Tilt phone</span> Rotate ship (like a steering wheel)</li>' +
+                       '<li><span class="key">Left stick</span> Thrust, reverse, strafe</li>' +
+                       '<li><span class="key">FIRE</span> Shoot</li>' +
+                       '<li><span class="key">NUKE</span> Screen-clearing bomb</li>' +
+                       '<li><span class="key">MENU</span> Pause / level select</li>' +
+                       '<li style="grid-column:1/-1;opacity:0.7;font-style:italic;padding-top:4px">Hold phone upright in landscape</li>';
             } else {
                 /* Desktop controls - compact two-column */
                 html = '<li><span class="key">Arrow Keys</span> Steer</li>' +
                        '<li><span class="key">X</span> Fire</li>' +
                        '<li><span class="key">Up Arrow</span> Thrust</li>' +
                        '<li><span class="key">Space</span> Nuke</li>' +
-                       '<li><span class="key">Down Arrow</span> Brake</li>' +
+                       '<li><span class="key">Down Arrow</span> Reverse</li>' +
                        '<li><span class="key">ESC</span> Menu</li>' +
                        '<li><span class="key">Z / C</span> Strafe L/R</li>';
             }
@@ -1048,8 +1227,9 @@
                 }
             });
 
-            /* Setup virtual buttons */
+            /* Setup virtual buttons and joystick */
             setupMobileButtons();
+            setupJoystick();
         }
 
         /* Populate controls on load */
