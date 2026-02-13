@@ -34,7 +34,221 @@ static App* g_app = NULL;
 /* Screen update and temp buffer */
 extern void UpdateScreen(void);
 extern uint32_t ScreenTemp[];
+extern uint32_t* ScreenOff;
 extern void sseMemcpy32(uint32_t* dst, const uint32_t* src, int count);
+extern void sseMemset32(void* dest, uint32_t value, unsigned long count);
+extern void AlphaBlit(int x, int y, uint32_t* src, int src_width, int src_height);
+extern uint32_t ComputeAlpha(uint32_t src, uint32_t dst);
+extern void UpdateInput(void);
+extern void FlushKeyboard(void);
+extern uint8_t KEYBOARD[320];
+extern uint16_t MOUSE_LBUTTON;
+extern int Mix_FadeOutMusic(int ms);
+extern void* Mix_LoadMUS(const char* file);
+extern int Mix_VolumeMusic(int volume);
+extern int Mix_PlayMusic(void* music, int loops);
+extern int Mix_HaltChannel(int channel);
+
+/*------------------------------------------------------------------------
+ * Non-blocking ending sequence state machine (WASM only)
+ *
+ * The blocking app_ending_sequence() uses emscripten_sleep() inside fade
+ * loops, which can't unwind through the main loop callback's ASYNCIFY
+ * context. Instead, we drive the ending one frame at a time from the
+ * main loop callback — no sleeps, no blocking.
+ *------------------------------------------------------------------------*/
+
+enum {
+    END_FADE_OUT_MUSIC,     /* Wait ~12 frames for music fade */
+    END_START_MUSIC,        /* Load + play ending music */
+    END_FADE_TO_WHITE,      /* Fade current screen to white */
+    END_SETUP_CLIP,         /* Blit next story clip into ScreenTemp */
+    END_FADE_FROM_WHITE,    /* Fade white to reveal clip */
+    END_WAIT_INPUT,         /* Wait for keypress/click or timeout */
+    END_FADE_TO_BLACK,      /* Final fade out */
+    END_DONE                /* Save progress, transition to menu */
+};
+
+typedef struct {
+    int active;
+    int phase;
+    int frame;
+    int clip_index;         /* Which story clip (0-2) */
+    int target_frames;
+    int speed;
+    uint32_t fade_color;
+} EndingState;
+
+static EndingState g_ending = {0};
+
+static void ending_start(App* app) {
+    g_ending.active = 1;
+    g_ending.phase = END_FADE_OUT_MUSIC;
+    g_ending.frame = 0;
+    g_ending.clip_index = 0;
+    g_ending.fade_color = 0;
+    app->in_ending = 1;
+    Mix_FadeOutMusic(100);
+}
+
+/* Advance one frame of the ending sequence. Called from emscripten_frame. */
+static void ending_tick(App* app) {
+    uint8_t alpha;
+
+    switch (g_ending.phase) {
+
+    case END_FADE_OUT_MUSIC:
+        g_ending.frame++;
+        if (g_ending.frame >= 12) { /* ~200ms at 60fps */
+            g_ending.phase = END_START_MUSIC;
+            g_ending.frame = 0;
+        }
+        break;
+
+    case END_START_MUSIC: {
+        AudioAssets* a = &app->audio;
+        if (!a->music_ending)
+            a->music_ending = Mix_LoadMUS("./sound/ending_theme.ogg");
+        if (a->music_ending) {
+            Mix_VolumeMusic(110);
+            Mix_PlayMusic(a->music_ending, 1);
+        }
+        Mix_HaltChannel(-1);
+
+        if (!app->visuals.story_clips) {
+            /* No clips — skip straight to done */
+            g_ending.phase = END_DONE;
+            break;
+        }
+
+        /* Set up fade-to-white from the current game screen */
+        sseMemcpy32(ScreenTemp, app->render.screen, SCREEN_WIDTH * SCREEN_HEIGHT);
+        g_ending.phase = END_FADE_TO_WHITE;
+        g_ending.frame = 0;
+        g_ending.target_frames = 500;
+        g_ending.speed = 2;
+        g_ending.fade_color = 0x00FFFFFF; /* transparent white */
+        break;
+    }
+
+    case END_FADE_TO_WHITE:
+        /* One frame of fade: copy base image, blend white overlay, present */
+        sseMemcpy32(ScreenOff, ScreenTemp, SCREEN_WIDTH * SCREEN_HEIGHT);
+        for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+            ScreenOff[i] = ComputeAlpha(g_ending.fade_color, ScreenOff[i]);
+        UpdateScreen();
+
+        alpha = (g_ending.fade_color >> 24) & 0xFF;
+        if (alpha <= 255 - g_ending.speed)
+            alpha += g_ending.speed;
+        else
+            alpha = 255;
+        g_ending.fade_color = (g_ending.fade_color & 0x00FFFFFF) | ((uint32_t)alpha << 24);
+
+        g_ending.frame++;
+        if (g_ending.frame >= g_ending.target_frames) {
+            g_ending.phase = END_SETUP_CLIP;
+            g_ending.frame = 0;
+        }
+        return; /* Already presented, skip normal render */
+
+    case END_SETUP_CLIP: {
+        /* Blit the current clip into screen and ScreenTemp */
+        int idx = g_ending.clip_index;
+        sseMemset32(app->render.screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+        sseMemset32(ScreenOff, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+        AlphaBlit(SCREEN_WIDTH / 2 - 320, SCREEN_HEIGHT / 2 - 240,
+                  app->visuals.story_clips + (640 * 480 * idx), 640, 480);
+        sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+        g_ending.phase = END_FADE_FROM_WHITE;
+        g_ending.frame = 0;
+        g_ending.target_frames = 300;
+        g_ending.speed = 2;
+        g_ending.fade_color = 0xFFFFFFFF; /* opaque white */
+        break;
+    }
+
+    case END_FADE_FROM_WHITE:
+        sseMemcpy32(ScreenOff, ScreenTemp, SCREEN_WIDTH * SCREEN_HEIGHT);
+        for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+            ScreenOff[i] = ComputeAlpha(g_ending.fade_color, ScreenOff[i]);
+        UpdateScreen();
+
+        alpha = (g_ending.fade_color >> 24) & 0xFF;
+        if (alpha >= g_ending.speed)
+            alpha -= g_ending.speed;
+        else
+            alpha = 0;
+        g_ending.fade_color = (g_ending.fade_color & 0x00FFFFFF) | ((uint32_t)alpha << 24);
+
+        g_ending.frame++;
+        if (g_ending.frame >= g_ending.target_frames) {
+            g_ending.clip_index++;
+            if (g_ending.clip_index < 3) {
+                /* More clips — fade to white then show next */
+                g_ending.phase = END_FADE_TO_WHITE;
+                g_ending.frame = 0;
+                g_ending.target_frames = 300;
+                g_ending.speed = 2;
+                g_ending.fade_color = 0x00FFFFFF;
+            } else {
+                /* All clips shown — wait for input */
+                g_ending.phase = END_WAIT_INPUT;
+                g_ending.frame = 0;
+                FlushKeyboard();
+            }
+        }
+        return;
+
+    case END_WAIT_INPUT:
+        UpdateInput();
+        for (int i = 0; i < 128; i++) {
+            if (KEYBOARD[i]) { g_ending.phase = END_FADE_TO_BLACK; goto setup_final_fade; }
+        }
+        if (MOUSE_LBUTTON) { g_ending.phase = END_FADE_TO_BLACK; goto setup_final_fade; }
+        g_ending.frame++;
+        if (g_ending.frame >= 900) {
+            g_ending.phase = END_FADE_TO_BLACK;
+        setup_final_fade:
+            g_ending.frame = 0;
+            g_ending.target_frames = 120;
+            g_ending.speed = 3;
+            g_ending.fade_color = 0x00000000; /* transparent black */
+            sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
+        }
+        break;
+
+    case END_FADE_TO_BLACK:
+        sseMemcpy32(ScreenOff, ScreenTemp, SCREEN_WIDTH * SCREEN_HEIGHT);
+        for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+            ScreenOff[i] = ComputeAlpha(g_ending.fade_color, ScreenOff[i]);
+        UpdateScreen();
+
+        alpha = (g_ending.fade_color >> 24) & 0xFF;
+        if (alpha <= 255 - g_ending.speed)
+            alpha += g_ending.speed;
+        else
+            alpha = 255;
+        g_ending.fade_color = (g_ending.fade_color & 0x00FFFFFF) | ((uint32_t)alpha << 24);
+
+        g_ending.frame++;
+        if (g_ending.frame >= g_ending.target_frames) {
+            g_ending.phase = END_DONE;
+        }
+        return;
+
+    case END_DONE:
+        EM_ASM(
+            localStorage.setItem('alan_parsons_beaten', '1');
+            console.log('Game beaten! Captain Planet mode unlocked.');
+        );
+        g_ending.active = 0;
+        app->in_ending = 0;
+        app_show_menu(app);
+        break;
+    }
+}
 
 /* Forward declaration */
 static void emscripten_frame(void);
@@ -140,7 +354,10 @@ static void emscripten_frame(void) {
             if (g_app->game.menu_requested) {
                 g_app->game.menu_requested = 0;
                 if (g_app->game.current_level_idx >= 5) {
-                    app_ending_sequence(g_app);
+                    /* Start non-blocking ending state machine */
+                    g_app->game.state = STATE_ENDING;
+                    ending_start(g_app);
+                    break;
                 }
                 app_show_menu(g_app);
             }
@@ -168,7 +385,8 @@ static void emscripten_frame(void) {
             break;
 
         case STATE_ENDING:
-            /* Handled by app_ending_sequence() */
+            if (g_ending.active)
+                ending_tick(g_app);
             break;
     }
 
