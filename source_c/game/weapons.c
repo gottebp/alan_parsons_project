@@ -36,7 +36,7 @@ void player_fire_weapons(Game* game) {
     /* Level 0: Base weapon - always fires */
     float speed0 = base_speed + PLAYER_SPEEDS[1];
     particle_spawn(game, COLLISION_PLAYER_OWNED, PARTICLE_SIZE_SMALL, 10,
-                   nose, p->angle, speed0, 30, 12);
+                   nose, p->angle, speed0, 40, 12);
 
     if (p->weapons_level < 1) return;
 
@@ -44,7 +44,7 @@ void player_fire_weapons(Game* game) {
     float speed1 = base_speed + PLAYER_SPEEDS[3];
     int spread = (int)game_rand_range(game, 10) - 5;
     particle_spawn(game, COLLISION_PLAYER_OWNED, PARTICLE_SIZE_SMALL, 7,
-                   nose, p->angle + spread, speed1, 30, 4);
+                   nose, p->angle + spread, speed1, 40, 4);
 
     if (p->weapons_level < 2) return;
 

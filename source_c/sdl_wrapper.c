@@ -298,6 +298,7 @@ void FadeFromBlack(int frames, int speed) {
     /* Mirrors assembly _FadeFromBlack (main.asm:1473-1541) */
 
     /* Wait for all keys and mouse button to be released - mirrors assembly lines 1482-1503 */
+    int wait_count = 0;
     while (1) {
         UpdateInput();
 
@@ -316,6 +317,9 @@ void FadeFromBlack(int frames, int speed) {
         if (num_keys_pressed == 0 && MOUSE_LBUTTON == 0) {
             break;
         }
+
+        /* Safety timeout: ~2s prevents hang from stuck virtual keys */
+        if (++wait_count >= 120) break;
 
 #ifdef __EMSCRIPTEN__
         /* EMSCRIPTEN: Yield to browser to prevent freezing */
@@ -371,6 +375,7 @@ void FadeToBlack(int frames, int speed) {
     /* Mirrors assembly _FadeToBlack (main.asm:1548-1610) */
 
     /* Wait for all keys and mouse button to be released - mirrors assembly lines 1552-1573 */
+    int wait_count = 0;
     while (1) {
         UpdateInput();
 
@@ -389,6 +394,9 @@ void FadeToBlack(int frames, int speed) {
         if (num_keys_pressed == 0 && MOUSE_LBUTTON == 0) {
             break;
         }
+
+        /* Safety timeout: ~2s prevents hang from stuck virtual keys */
+        if (++wait_count >= 120) break;
 
 #ifdef __EMSCRIPTEN__
         /* EMSCRIPTEN: Yield to browser to prevent freezing */
@@ -453,6 +461,7 @@ void FadeFromWhite(int frames, int speed) {
     UpdateInput();
 
     int done = 0;
+    int wait_count = 0;
     while (!done) {
         int num_keys_pressed = 0;
         for (int i = 0; i < 128; i++) {
@@ -461,6 +470,8 @@ void FadeFromWhite(int frames, int speed) {
         if (num_keys_pressed == 0 && MOUSE_LBUTTON == 0) {
             done = 1;
         }
+        /* Safety timeout: ~2s prevents hang from stuck virtual keys */
+        if (++wait_count >= 120) done = 1;
         UpdateInput();
 #ifdef __EMSCRIPTEN__
         emscripten_sleep(16);
@@ -518,6 +529,7 @@ void FadeToWhite(int frames, int speed) {
     UpdateInput();
 
     int done = 0;
+    int wait_count = 0;
     while (!done) {
         int num_keys_pressed = 0;
         for (int i = 0; i < 128; i++) {
@@ -526,6 +538,8 @@ void FadeToWhite(int frames, int speed) {
         if (num_keys_pressed == 0 && MOUSE_LBUTTON == 0) {
             done = 1;
         }
+        /* Safety timeout: ~2s prevents hang from stuck virtual keys */
+        if (++wait_count >= 120) done = 1;
         UpdateInput();
 #ifdef __EMSCRIPTEN__
         emscripten_sleep(16);

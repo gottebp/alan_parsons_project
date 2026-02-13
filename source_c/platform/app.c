@@ -227,6 +227,7 @@ static void load_audio_assets(App* app) {
     a->snd_engines = Mix_LoadWAV("./sound/engines.wav");
     a->snd_weapon = Mix_LoadWAV("./sound/weapon.wav");
     a->snd_hit = Mix_LoadWAV("./sound/hit.wav");
+    a->snd_impact = Mix_LoadWAV("./sound/impact.wav");
     a->snd_evil_laugh = Mix_LoadWAV("./sound/evil_laugh.wav");
 
     if (a->snd_hit) Mix_VolumeChunk(a->snd_hit, 10);
@@ -659,6 +660,9 @@ void app_update_audio(App* app) {
     audio_bridge_update(&app->audio_state, &app->game, &app->input);
 
     /* Process game audio events */
+    if (app->game.audio_body_collision) {
+        app->game.audio_body_collision = 0;
+    }
     if (app->game.audio_player_hit) {
         audio_bridge_player_hit(&app->audio_state);
         app->game.audio_player_hit = 0;
@@ -797,10 +801,11 @@ void app_ending_sequence(App* app) {
     FlushKeyboard();
     FadeFromWhite(300, 2);
 
-    /* Wait for key press */
+    /* Wait for key press, touch/click, or timeout (15s) */
     FlushKeyboard();
     SDL_Event event;
     int waiting = 1;
+    int wait_frames = 0;
     while (waiting) {
 #ifdef __EMSCRIPTEN__
         emscripten_sleep(16);
@@ -814,11 +819,20 @@ void app_ending_sequence(App* app) {
             }
         }
         UpdateInput();
+        /* Check keyboard */
         for (int i = 0; i < 128; i++) {
             if (KEYBOARD[i]) {
                 waiting = 0;
                 break;
             }
+        }
+        /* Check mouse/touch (handle_touch_cursor sets MOUSE_LBUTTON) */
+        if (MOUSE_LBUTTON) {
+            waiting = 0;
+        }
+        /* Safety timeout: 900 frames (~15s) prevents permanent hang */
+        if (++wait_frames >= 900) {
+            waiting = 0;
         }
     }
 

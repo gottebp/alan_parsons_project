@@ -11,7 +11,7 @@ EMFLAGS = -s USE_SDL=2 \
           -s INITIAL_MEMORY=268435456 \
           -s STACK_SIZE=1048576 \
           -s ASYNCIFY \
-          -s ASYNCIFY_STACK_SIZE=65536 \
+          -s ASYNCIFY_STACK_SIZE=131072 \
           -s EXPORTED_FUNCTIONS='["_main","_RestartGame","_handle_virtual_key","_handle_tilt_input","_handle_touch_cursor","_handle_mouse_move"]' \
           -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
           --shell-file shell.html

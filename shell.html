@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>The Alan Parsons Project</title>
     <style>
         * {
@@ -199,10 +199,22 @@
             box-shadow: 0 0 25px rgba(212, 175, 55, 0.7);
         }
 
+        /* Menu button - top left */
+        #btn-menu {
+            top: calc(10px + env(safe-area-inset-top, 0px));
+            left: calc(10px + env(safe-area-inset-left, 0px));
+            width: 60px;
+            height: 36px;
+            border-radius: 6px;
+            font-size: 13px;
+            background: rgba(100, 100, 100, 0.4);
+            border-color: rgba(180, 180, 180, 0.6);
+        }
+
         /* Action buttons - right side (primary thumb zone) */
         #btn-fire {
-            bottom: 30px;
-            right: 30px;
+            bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+            right: calc(30px + env(safe-area-inset-right, 0px));
             width: 90px;
             height: 90px;
             border-radius: 50%;
@@ -210,8 +222,8 @@
         }
 
         #btn-nuke {
-            bottom: 140px;
-            right: 30px;
+            bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+            right: calc(30px + env(safe-area-inset-right, 0px));
             width: 70px;
             height: 70px;
             border-radius: 50%;
@@ -226,15 +238,15 @@
 
         /* Strafe buttons - left side (left thumb) */
         #btn-strafe-left {
-            bottom: 30px;
-            left: 30px;
+            bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+            left: calc(30px + env(safe-area-inset-left, 0px));
             width: 70px;
             height: 70px;
         }
 
         #btn-strafe-right {
-            bottom: 30px;
-            left: 115px;
+            bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+            left: calc(115px + env(safe-area-inset-left, 0px));
             width: 70px;
             height: 70px;
         }
@@ -508,6 +520,7 @@
         <!-- Mobile touch controls overlay -->
         <div id="mobile-controls">
             <div id="tilt-indicator">Tilt to Steer</div>
+            <div id="btn-menu" class="mobile-btn">MENU</div>
             <div id="btn-thrust-up" class="mobile-btn">▲<br>Thrust</div>
             <div id="btn-thrust-down" class="mobile-btn">▼<br>Brake</div>
             <div id="btn-strafe-left" class="mobile-btn">◄<br>Strafe</div>
@@ -923,6 +936,7 @@
         function setupMobileButtons() {
             /* SDL scancodes (not JS keyCodes!) - must match KEYBOARD[] indices in C */
             var buttons = {
+                'btn-menu': { key: 41, name: 'Escape' },    /* SDL_SCANCODE_ESCAPE */
                 'btn-fire': { key: 27, name: 'X' },         /* SDL_SCANCODE_X */
                 'btn-nuke': { key: 44, name: 'Space' },     /* SDL_SCANCODE_SPACE */
                 'btn-strafe-left': { key: 29, name: 'Z' },  /* SDL_SCANCODE_Z */
@@ -931,22 +945,59 @@
                 'btn-thrust-down': { key: 81, name: 'Down' } /* SDL_SCANCODE_DOWN */
             };
 
+            /* Track active touches per button for touchmove leave detection */
+            var activeTouches = {};  /* touchId -> btnId */
+
             Object.keys(buttons).forEach(function(btnId) {
                 var btn = document.getElementById(btnId);
                 var info = buttons[btnId];
 
                 btn.addEventListener('touchstart', function(e) {
-                    console.log('Mobile button pressed:', info.name);
+                    /* Track touch identifiers for this button */
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        activeTouches[e.changedTouches[i].identifier] = { btnId: btnId, key: info.key };
+                    }
                     if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
-                        Module._handle_virtual_key(info.key, 1);  /* 1 = key down */
+                        Module._handle_virtual_key(info.key, 1);
                     }
                     e.preventDefault();
                 }, { passive: false });
 
                 btn.addEventListener('touchend', function(e) {
-                    console.log('Mobile button released:', info.name);
+                    /* Clean up tracked touches */
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        delete activeTouches[e.changedTouches[i].identifier];
+                    }
                     if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
-                        Module._handle_virtual_key(info.key, 0);  /* 0 = key up */
+                        Module._handle_virtual_key(info.key, 0);
+                    }
+                    e.preventDefault();
+                }, { passive: false });
+
+                /* touchcancel: release key when touch is interrupted (incoming call, gesture conflict) */
+                btn.addEventListener('touchcancel', function(e) {
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        delete activeTouches[e.changedTouches[i].identifier];
+                    }
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
+                        Module._handle_virtual_key(info.key, 0);
+                    }
+                    e.preventDefault();
+                }, { passive: false });
+
+                /* touchmove: release key when finger slides off button bounds */
+                btn.addEventListener('touchmove', function(e) {
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        var touch = e.changedTouches[i];
+                        var rect = btn.getBoundingClientRect();
+                        var inside = touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                                     touch.clientY >= rect.top && touch.clientY <= rect.bottom;
+                        if (!inside && activeTouches[touch.identifier]) {
+                            delete activeTouches[touch.identifier];
+                            if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
+                                Module._handle_virtual_key(info.key, 0);
+                            }
+                        }
                     }
                     e.preventDefault();
                 }, { passive: false });
@@ -965,7 +1016,8 @@
                        '<li><span class="key">Tilt Fwd/Back</span> Thrust/Brake</li>' +
                        '<li><span class="key">◄ ►</span> Strafe (left thumb)</li>' +
                        '<li><span class="key">FIRE</span> Shoot (right thumb)</li>' +
-                       '<li><span class="key">NUKE</span> Launch nuke</li>';
+                       '<li><span class="key">NUKE</span> Launch nuke</li>' +
+                       '<li><span class="key">MENU</span> Return to menu</li>';
             } else {
                 /* Desktop controls - compact two-column */
                 html = '<li><span class="key">Arrow Keys</span> Steer</li>' +
@@ -1023,6 +1075,14 @@
                 SDL2.audioContext.resume().then(function() {
                     console.log('Audio context resumed');
                 });
+            }
+
+            /* Activate mobile controls immediately on first click (no second tap needed) */
+            if (isTouchDevice) {
+                mobileControls.classList.add('active');
+                if (!tiltPermissionGranted) {
+                    requestOrientationPermission();
+                }
             }
         });
     </script>

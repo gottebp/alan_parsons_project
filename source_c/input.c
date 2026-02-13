@@ -129,6 +129,11 @@ void FlushKeyboard(void) {
 
     /* Clear 80 dwords (320 bytes) directly in SDL's state (mirrors assembly) */
     sseMemset32((void*)kb_ptr, 0, 80);
+
+#ifdef __EMSCRIPTEN__
+    /* Clear virtual keys too, otherwise UpdateInput() re-merges stuck touch state */
+    memset(virtual_keys, 0, 320);
+#endif
 }
 
 #ifdef __EMSCRIPTEN__

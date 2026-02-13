@@ -7,6 +7,7 @@
 
 #include "../../include_c/game/game.h"
 #include <string.h>
+#include <stdio.h>
 
 /* Forward declarations for weapon functions (implemented in weapons.c) */
 void enemy_boss_fire(Game* game, Enemy* e);
@@ -172,6 +173,7 @@ static void game_tick(Game* game, const InputState* input, float dt) {
 
             /* Collisions */
             collisions_check(game);
+            collisions_check_bodies(game);
 
             /* Check outcome */
             game_check_outcome(game);
@@ -481,16 +483,22 @@ void waves_init(Game* game, int level_index) {
 
         ws->waves[wave].enemy_count = wave_count;
 
-        /* Calculate spawn time */
-        uint32_t delay = SPAWN_BASE_DELAY + (game_rand_range(game, 0x0FFF) >> SPAWN_RANDOM_DIVISOR);
+        /* Calculate spawn time - scale by wave size so larger waves get more breathing room */
+        uint32_t delay = SPAWN_BASE_DELAY + (uint32_t)(wave_count * 12)
+                       + (game_rand_range(game, 0x0FFF) >> SPAWN_RANDOM_DIVISOR);
         if (wave == 0) {
             ws->waves[wave].frame_trigger = delay;
         } else {
             ws->waves[wave].frame_trigger = ws->waves[wave - 1].frame_trigger + delay;
         }
 
+        printf("[WAVE] wave %d: %d enemies, trigger at frame %d (%.1fs)\n",
+               wave, wave_count, ws->waves[wave].frame_trigger,
+               ws->waves[wave].frame_trigger / 60.0f);
         ws->wave_count++;
     }
+
+    printf("[WAVE] Total waves set up: %d (level wanted %d)\n", ws->wave_count, level->wave_count);
 
     /* Create boss (inactive) */
     Vec2 boss_pos = vec2(level->boss_x, level->boss_y);
@@ -520,6 +528,8 @@ void waves_update(Game* game) {
     if (ws->current_wave < ws->wave_count) {
         Wave* next = &ws->waves[ws->current_wave];
         if ((int)ws->frame_counter >= next->frame_trigger) {
+            printf("[WAVE] Spawning wave %d at frame %u (trigger was %d)\n",
+                   ws->current_wave, ws->frame_counter, next->frame_trigger);
             /* Spawn this wave */
             for (int i = 0; i < next->enemy_count; i++) {
                 game->enemies.entities[next->first_enemy_idx + i].active = 1;
@@ -528,9 +538,19 @@ void waves_update(Game* game) {
         }
     }
 
-    /* Check for boss spawn (after all waves have been triggered) */
+    /* Check for boss spawn (after all waves triggered AND all small enemies dead) */
     if (ws->current_wave >= ws->wave_count && !ws->boss_spawned && ws->boss_index >= 0) {
-        waves_spawn_boss(game);
+        int alive_small = 0;
+        POOL_FOREACH_CONST(&game->enemies, e, Enemy, {
+            if (e->active && e->size == ENEMY_SIZE_SMALL) {
+                alive_small++;
+            }
+        });
+        if (alive_small == 0) {
+            printf("[WAVE] Boss spawning at frame %u (all %d waves cleared)\n",
+                   ws->frame_counter, ws->wave_count);
+            waves_spawn_boss(game);
+        }
     }
 }
 
@@ -781,10 +801,17 @@ void enemies_update(Game* game, float dt) {
         /* Smoke trail when health is low */
         int max_health = (int)(e->mass * ENEMY_HEALTH_MULTIPLIER);
         if (e->health > 0 && e->health < max_health / 3) {
-            uint8_t smoke_angle = game_rand_range(game, 256);
-            int flare = (game_rand(game) & 1) ? 2 : 3;
-            particle_spawn(game, COLLISION_NONE, PARTICLE_SIZE_LARGE, flare,
-                          e->position, smoke_angle, 1.0f, 30, 0);
+            int smoke_count = (e->size == ENEMY_SIZE_BOSS) ? 6 : 1;
+            for (int i = 0; i < smoke_count; i++) {
+                uint8_t smoke_angle = game_rand_range(game, 256);
+                int flare = (game_rand(game) & 1) ? 2 : 3;
+                float speed = (e->size == ENEMY_SIZE_BOSS) ?
+                    1.0f + (game_rand_range(game, 20) * 0.1f) : 1.0f;
+                int life = (e->size == ENEMY_SIZE_BOSS) ?
+                    40 + (int)game_rand_range(game, 40) : 30;
+                particle_spawn(game, COLLISION_NONE, PARTICLE_SIZE_LARGE, flare,
+                              e->position, smoke_angle, speed, life, 0);
+            }
         }
     });
 }
@@ -900,34 +927,11 @@ int collision_particle_enemy(const Particle* p, const Enemy* e) {
 
 void collisions_check_bodies(Game* game) {
     Player* player = &game->player;
-
-    /* Decrement invulnerability timers */
-    if (player->invuln_frames > 0) {
-        player->invuln_frames--;
-    }
-
-    POOL_FOREACH(&game->enemies, e, Enemy, {
-        if (e->invuln_frames > 0) {
-            e->invuln_frames--;
-        }
-    });
-
-    /* Skip if player is invulnerable */
-    if (player->invuln_frames > 0) return;
-
     Vec2 player_pos = player->position;
 
-    /* Calculate player velocity vector */
-    Vec2 forward = vec2_from_angle(player->angle);
-    Vec2 right = vec2_perp(forward);
-    Vec2 player_vel = vec2_add(
-        vec2_mul(forward, player->speed),
-        vec2_mul(right, player->strafe_speed)
-    );
-
     POOL_FOREACH(&game->enemies, e, Enemy, {
-        /* Skip invulnerable enemies */
-        if (e->invuln_frames > 0) continue;
+        /* Skip bosses — they don't die on contact */
+        if (e->size == ENEMY_SIZE_BOSS) continue;
 
         /* Calculate distance (toroidal) */
         float dx = e->position.x - player_pos.x;
@@ -937,70 +941,38 @@ void collisions_check_bodies(Game* game) {
         if (dy > MAP_HEIGHT / 2) dy -= MAP_HEIGHT;
         else if (dy < -MAP_HEIGHT / 2) dy += MAP_HEIGHT;
 
-        /* Combined collision radius */
-        float enemy_radius = (e->size == ENEMY_SIZE_BOSS) ?
-                             BOSS_COLLISION : SMALL_ENEMY_COLLISION;
-        float collision_dist = PLAYER_BODY_RADIUS + enemy_radius;
-
+        float collision_dist = PLAYER_BODY_RADIUS + SMALL_ENEMY_COLLISION;
         float dist_sq = dx * dx + dy * dy;
         if (dist_sq >= collision_dist * collision_dist) continue;
 
-        /* COLLISION! Calculate relative velocity */
-        Vec2 relative_vel = vec2_sub(player_vel, e->velocity);
-        float rel_speed = vec2_length(relative_vel);
+        /* COLLISION: enemy dies, player takes 10x that enemy's weapon damage */
+        const SmallEnemyFireDef* def = enemy_fire_def(e->type);
+        int player_damage = def->damage * 18;
 
-        /* Calculate damage based on closing speed */
-        int base_damage = (int)(rel_speed * BODY_COLLISION_DAMAGE_SCALE);
-        if (base_damage < BODY_COLLISION_MIN_DAMAGE) {
-            base_damage = BODY_COLLISION_MIN_DAMAGE;
-        }
-
-        /* Player takes damage (reduced by mass ratio) */
-        float mass_ratio = e->mass / (player->mass + e->mass);
-        int player_damage = (int)(base_damage * mass_ratio);
-        if (player_damage < BODY_COLLISION_MIN_DAMAGE) {
-            player_damage = BODY_COLLISION_MIN_DAMAGE;
-        }
-
-        /* Enemy takes damage (proportional to player's share) */
-        int enemy_damage_amt = (int)(base_damage * (1.0f - mass_ratio));
-        if (enemy_damage_amt < BODY_COLLISION_MIN_DAMAGE) {
-            enemy_damage_amt = BODY_COLLISION_MIN_DAMAGE;
-        }
-
-        /* Apply damage */
-        player->health -= player_damage;
-        e->health -= enemy_damage_amt;
-
-        /* Calculate knockback direction (normalized separation) */
+        /* Impact point for effects */
         float dist = sqrtf(dist_sq);
         if (dist < 1.0f) dist = 1.0f;
-        Vec2 sep = vec2(dx / dist, dy / dist);  /* Points from player to enemy */
-
-        /* Apply knockback (push apart) */
-        float knockback = BODY_COLLISION_KNOCKBACK;
-
-        /* Player knocked away from enemy */
-        player->speed -= knockback * mass_ratio * (sep.x * forward.x + sep.y * forward.y);
-        player->strafe_speed -= knockback * mass_ratio * (sep.x * right.x + sep.y * right.y);
-
-        /* Enemy knocked away from player */
-        e->velocity = vec2_add(e->velocity, vec2_mul(sep, knockback * (1.0f - mass_ratio)));
-
-        /* Set invulnerability */
-        player->invuln_frames = PLAYER_INVULN_FRAMES;
-        e->invuln_frames = ENEMY_INVULN_FRAMES;
-
-        /* Visual feedback */
+        Vec2 sep = vec2(dx / dist, dy / dist);
         Vec2 impact_point = vec2_add(player_pos, vec2_mul(sep, PLAYER_BODY_RADIUS));
-        effect_hit_sparks(game, impact_point, 1);  /* Large impact */
-        effect_screen_shake(game, 30);
 
-        /* Check for enemy death */
-        if (e->health <= 0) {
-            enemy_explode(game, e);
-            enemy_pool_free(&game->enemies, e);
+        /* Damage player */
+        player_take_damage(game, player_damage, impact_point);
+
+        /* Smoke burst — varied speeds and lifetimes for natural look */
+        for (int i = 0; i < 80; i++) {
+            uint8_t smoke_angle = game_rand_range(game, 256);
+            int flare = (game_rand(game) & 1) ? 2 : 3;
+            ParticleSize sz = (game_rand(game) & 1) ? PARTICLE_SIZE_LARGE : PARTICLE_SIZE_SMALL;
+            float speed = 1.0f + (game_rand_range(game, 30) * 0.1f);  /* 1.0 - 4.0 */
+            int life = 80 + (int)game_rand_range(game, 120);           /* 80 - 200 */
+            particle_spawn(game, COLLISION_NONE, sz, flare,
+                          impact_point, smoke_angle, speed, life, 0);
         }
+
+        /* Kill the enemy */
+        enemy_explode(game, e);
+        enemy_pool_free(&game->enemies, e);
+        game->audio_enemy_destroyed = 1;
     });
 }
 
@@ -1125,6 +1097,9 @@ void effect_nuke(Game* game, Vec2 position) {
 
         particle_spawn(game, COLLISION_PLAYER_OWNED, PARTICLE_SIZE_SMALL, 15, position,
                       angle + 3, 12.6f, 100, 20);
+
+        particle_spawn(game, COLLISION_PLAYER_OWNED, PARTICLE_SIZE_LARGE, 5, position,
+                      angle + 1, 4.5f, 100, 20);
     }
 }
 

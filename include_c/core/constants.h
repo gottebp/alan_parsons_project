@@ -88,7 +88,7 @@
 
 /* Weapons */
 #define PLAYER_MAX_WEAPON_LEVEL 5
-#define PLAYER_NUKE_COUNT       4
+#define PLAYER_NUKE_COUNT       6
 #define PLAYER_NUKE_COOLDOWN    25      /* Frames between nukes */
 
 /*============================================================================
@@ -151,8 +151,8 @@
 #define ENEMY_HEALTH_MULTIPLIER 20
 
 /* Spawn timing */
-#define SPAWN_BASE_DELAY        800     /* Frames before first wave */
-#define SPAWN_RANDOM_DIVISOR    2       /* Right-shift for random delay component */
+#define SPAWN_BASE_DELAY        480     /* Frames before next wave (~8s at 60fps) */
+#define SPAWN_RANDOM_DIVISOR    3       /* Right-shift for random delay component */
 
 /*----------------------------------------------------------------------------
  * Small Enemy Fire Rates

@@ -32,6 +32,7 @@ typedef struct {
     void* snd_engines;
     void* snd_weapon;
     void* snd_hit;
+    void* snd_impact;
     void* snd_evil_laugh;
     void* snd_explosion[5];
 

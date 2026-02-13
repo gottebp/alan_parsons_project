@@ -99,6 +99,7 @@ typedef struct {
      * AUDIO EVENTS (set by game, cleared by app after playing sounds)
      *------------------------------------------------------------------------*/
     int audio_player_hit;       /* Player took damage this frame */
+    int audio_body_collision;   /* Body collision this frame (burst of hits) */
     int audio_enemy_destroyed;  /* Enemy was destroyed this frame */
     int audio_nuke_fired;       /* Nuke was fired this frame */
     int audio_boss_spawned;     /* Boss appeared this frame */
