@@ -71,6 +71,13 @@ $(TARGET): $(SOURCES)
 		-o $(TARGET)
 	@echo "Removing uncompressed game.data (keeping .gz only)..."
 	rm -f $(BUILD_DIR)/game.data
+	@echo "Adding cache-busting version to resource URLs..."
+	@BUILD_VER=$$(git rev-parse --short HEAD 2>/dev/null || date +%s); \
+	sed -i.cb "s|src=game\.js|src=game.js?v=$$BUILD_VER|" $(BUILD_DIR)/game.html; \
+	sed -i.cb "s|game\.wasm|game.wasm?v=$$BUILD_VER|g" $(BUILD_DIR)/game.js; \
+	sed -i.cb 's|REMOTE_PACKAGE_BASE="game\.data\.gz"|REMOTE_PACKAGE_BASE="game.data.gz?v='$$BUILD_VER'"|' $(BUILD_DIR)/game.js; \
+	rm -f $(BUILD_DIR)/game.html.cb $(BUILD_DIR)/game.js.cb; \
+	echo "  Cache-bust version: $$BUILD_VER"
 	@echo "Build complete! Compressed from 213MB to 32MB (85% reduction)"
 
 # Clean build files
