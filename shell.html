@@ -947,7 +947,7 @@
             e.preventDefault();
         }, { passive: false });
 
-        /* Joystick idle fade: after 4s with no stick touch, fade to 10%
+        /* Joystick idle fade: after 2.5s with no stick touch, fade to 10%
            and disable pointer-events so menu touches pass through.
            Any touch in the bottom half of the canvas re-enables them. */
         var joyLeft = document.getElementById('joystick-left');
@@ -1118,8 +1118,8 @@
             /* touchstart on zone captures the finger, then track globally
                so the thumb can move outside the zone without losing contact */
             zone.addEventListener('touchstart', function(e) {
-                joyTouchStarted();
                 if (trackingId !== null) return;
+                joyTouchStarted();
                 var touch = e.changedTouches[0];
                 trackingId = touch.identifier;
 
