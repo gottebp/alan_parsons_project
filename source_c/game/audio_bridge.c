@@ -105,8 +105,9 @@ void audio_bridge_update(AudioBridgeState* state, const Game* game, const InputS
         }
     }
 
-    /* Handle engine sound */
-    if (input->up && game->player.health > 0) {
+    /* Handle engine sound (keyboard up OR mobile stick thrust) */
+    int thrusting = input->up || (input->mobile_active && input->stick_left_y < -0.01f);
+    if (thrusting && game->player.health > 0) {
         Mix_Chunk* engines = get_snd_engines();
         if (!state->engine_thrusting && engines) {
             Mix_PlayChannelTimed(3, engines, -1, -1);

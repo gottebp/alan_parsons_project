@@ -53,7 +53,7 @@ source /path/to/emsdk/emsdk_env.sh
 | Escape | Menu |
 | F | Toggle fullscreen |
 
-Mobile (WASM build): tilt to steer, on-screen buttons for fire/nuke/strafe/thrust.
+Mobile (WASM build): twin-stick controls — left stick for thrust/strafe, right stick to aim + auto-fire, NUKE button top-right.
 
 ## Command Line Options
 

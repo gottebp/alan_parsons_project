@@ -199,73 +199,99 @@
             box-shadow: 0 0 25px rgba(212, 175, 55, 0.7);
         }
 
-        /* Menu button - top left */
+        /* Menu button */
         #btn-menu {
-            top: calc(10px + env(safe-area-inset-top, 0px));
-            left: calc(10px + env(safe-area-inset-left, 0px));
+            top: calc(60px + env(safe-area-inset-top, 0px));
+            left: calc(41px + env(safe-area-inset-left, 0px));
             width: 60px;
             height: 36px;
             border-radius: 6px;
             font-size: 13px;
-            background: rgba(100, 100, 100, 0.4);
-            border-color: rgba(180, 180, 180, 0.6);
+            background: rgba(100, 100, 100, 0.14);
+            border-color: rgba(180, 180, 180, 0.21);
+            color: rgba(244, 244, 232, 0.35);
+            box-shadow: none;
         }
 
-        /* Action buttons - right side (primary thumb zone) */
-        #btn-fire {
-            bottom: calc(30px + env(safe-area-inset-bottom, 0px));
-            right: calc(30px + env(safe-area-inset-right, 0px));
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            font-size: 18px;
-        }
-
+        /* Nuke button - above right joystick, raised z-index */
         #btn-nuke {
-            bottom: calc(120px + env(safe-area-inset-bottom, 0px));
-            right: calc(30px + env(safe-area-inset-right, 0px));
-            width: 70px;
-            height: 70px;
+            bottom: calc(135px + env(safe-area-inset-bottom, 0px));
+            right: calc(45px + env(safe-area-inset-right, 0px));
+            width: 50px;
+            height: 50px;
             border-radius: 50%;
-            background: rgba(255, 74, 74, 0.3);
-            border-color: rgba(255, 74, 74, 0.8);
-            font-size: 16px;
+            background: rgba(255, 74, 74, 0.14);
+            border-color: rgba(255, 74, 74, 0.35);
+            font-size: 11px;
+            z-index: 110;
         }
 
         #btn-nuke:active {
-            background: rgba(255, 74, 74, 0.6);
+            background: rgba(255, 74, 74, 0.42);
         }
 
-        /* Virtual joystick - left side (left thumb) */
-        #joystick-zone {
+        /* Virtual joystick shared styles.
+           Zone is a large invisible touch area; base is the visible circle. */
+        .joystick-zone {
             position: absolute;
-            bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-            left: calc(20px + env(safe-area-inset-left, 0px));
-            width: 120px;
-            height: 120px;
             pointer-events: auto;
             touch-action: none;
+            transition: opacity 0.6s ease;
         }
 
-        #joystick-base {
-            width: 100%;
-            height: 100%;
+        .joystick-base {
+            position: relative;
             border-radius: 50%;
-            background: rgba(139, 168, 127, 0.15);
-            border: 2px solid rgba(212, 175, 55, 0.5);
+            background: rgba(139, 168, 127, 0.09);
+            border: 2px solid rgba(212, 175, 55, 0.3);
         }
 
-        #joystick-knob {
+        .joystick-knob {
             position: absolute;
-            width: 56px;
-            height: 56px;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
-            background: rgba(212, 175, 55, 0.6);
-            border: 2px solid rgba(212, 175, 55, 0.9);
+            background: rgba(212, 175, 55, 0.35);
+            border: 2px solid rgba(212, 175, 55, 0.55);
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
+        }
+
+        /* Left joystick - thrust/strafe.
+           Touch zone covers entire bottom-left quadrant;
+           visual joystick is positioned inside it. */
+        #joystick-left {
+            bottom: 0;
+            left: 0;
+            width: 50%;
+            height: 50%;
+        }
+
+        #joystick-left .joystick-base {
+            position: absolute;
+            bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+            left: calc(35px + env(safe-area-inset-left, 0px));
+            width: 100px;
+            height: 100px;
+        }
+
+        /* Right joystick - ship rotation.
+           Touch zone covers entire bottom-right quadrant. */
+        #joystick-right {
+            bottom: 0;
+            right: 0;
+            width: 50%;
+            height: 50%;
+        }
+
+        #joystick-right .joystick-base {
+            position: absolute;
+            bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+            right: calc(35px + env(safe-area-inset-right, 0px));
+            width: 100px;
+            height: 100px;
         }
 
         /* Fullscreen canvas styling */
@@ -552,12 +578,17 @@
         <!-- Mobile touch controls overlay -->
         <div id="mobile-controls">
             <div id="btn-menu" class="mobile-btn">MENU</div>
-            <div id="joystick-zone">
-                <div id="joystick-base"></div>
-                <div id="joystick-knob"></div>
-            </div>
-            <div id="btn-fire" class="mobile-btn">FIRE</div>
             <div id="btn-nuke" class="mobile-btn">NUKE</div>
+            <div id="joystick-left" class="joystick-zone">
+                <div class="joystick-base">
+                    <div class="joystick-knob" id="knob-left"></div>
+                </div>
+            </div>
+            <div id="joystick-right" class="joystick-zone">
+                <div class="joystick-base">
+                    <div class="joystick-knob" id="knob-right"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -592,21 +623,6 @@
         /* Mobile controls state */
         var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
         var mobileControls = document.getElementById('mobile-controls');
-        var tiltPermissionGranted = false;
-
-        /* Tilt plumb line state */
-        var tiltCalibrated = false;
-        var neutralBeta = 0;
-
-        /* Recalibrate plumb line when landscape orientation flips */
-        window.addEventListener('orientationchange', function() {
-            tiltCalibrated = false;
-        });
-        if (screen.orientation) {
-            screen.orientation.addEventListener('change', function() {
-                tiltCalibrated = false;
-            });
-        }
 
         /* BROWSER FULLSCREEN: Use standard Fullscreen API on container to keep overlay visible */
         function requestFullscreen(event) {
@@ -885,77 +901,6 @@
            MOBILE CONTROLS IMPLEMENTATION
            ============================================================================= */
 
-        /* Request device orientation permission (iOS 13+) */
-        function requestOrientationPermission() {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(function(response) {
-                        if (response === 'granted') {
-                            console.log('Device orientation permission granted');
-                            tiltPermissionGranted = true;
-                            startOrientationListening();
-                        } else {
-                            console.log('Device orientation permission denied');
-                            alert('Tilt steering requires device orientation access. You can still use the joystick for thrust and strafe.');
-                        }
-                    })
-                    .catch(function(error) {
-                        console.error('Error requesting orientation permission:', error);
-                    });
-            } else {
-                /* No permission needed (Android, older iOS) */
-                tiltPermissionGranted = true;
-                startOrientationListening();
-            }
-        }
-
-        /* Start listening to device orientation
-           Phone held upright in landscape like a steering wheel.
-           Roll (tilting the wheel left/right) = ship rotation. */
-        function startOrientationListening() {
-            window.addEventListener('deviceorientation', function(event) {
-                if (window.gameStarted && tiltPermissionGranted) {
-                    var beta = event.beta || 0;
-
-                    var angle = (screen.orientation && screen.orientation.angle) ||
-                                window.orientation || 0;
-
-                    /* Calibrate plumb line on first event */
-                    if (!tiltCalibrated) {
-                        neutralBeta = beta;
-                        tiltCalibrated = true;
-                    }
-
-                    /* Roll deviation from neutral, sign-adjusted for landscape */
-                    var rollDev;
-                    if (angle === 90) {
-                        rollDev = beta - neutralBeta;
-                    } else if (angle === -90 || angle === 270) {
-                        rollDev = neutralBeta - beta;
-                    } else {
-                        rollDev = beta - neutralBeta;
-                    }
-
-                    /* 3° dead band, 16° for full steer, linear */
-                    var tiltDead = 3;
-                    var tiltMax = 16;
-                    var absRoll = Math.abs(rollDev);
-                    var steer;
-                    if (absRoll < tiltDead) {
-                        steer = 0;
-                    } else {
-                        steer = ((absRoll - tiltDead) / (tiltMax - tiltDead)) * Math.sign(rollDev);
-                        if (steer > 1) steer = 1;
-                        if (steer < -1) steer = -1;
-                    }
-
-                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_tilt_input) {
-                        Module._handle_tilt_input(steer, 0);
-                    }
-                }
-            }, true);
-        }
-
         /* Convert CSS mouse/touch position to game internal coordinates (1280x800) */
         function cssToLogical(clientX, clientY) {
             var rect = canvas.getBoundingClientRect();
@@ -1002,12 +947,60 @@
             e.preventDefault();
         }, { passive: false });
 
+        /* Joystick idle fade: after 4s with no stick touch, fade to 10%
+           and disable pointer-events so menu touches pass through.
+           Any touch in the bottom half of the canvas re-enables them. */
+        var joyLeft = document.getElementById('joystick-left');
+        var joyRight = document.getElementById('joystick-right');
+        var joysticksEnabled = false;
+        var joyIdleTimer = null;
+        var joyActiveTouches = 0;
+
+        function setJoysticksEnabled(enabled) {
+            joysticksEnabled = enabled;
+            var val = enabled ? 'auto' : 'none';
+            joyLeft.style.pointerEvents = val;
+            joyRight.style.pointerEvents = val;
+            joyLeft.style.opacity = enabled ? '1' : '0.1';
+            joyRight.style.opacity = enabled ? '1' : '0.1';
+        }
+
+        function joyResetIdleTimer() {
+            if (joyIdleTimer) clearTimeout(joyIdleTimer);
+            joyIdleTimer = setTimeout(function() {
+                if (joyActiveTouches === 0) setJoysticksEnabled(false);
+            }, 2500);
+        }
+
+        function joyTouchStarted() {
+            joyActiveTouches++;
+            if (!joysticksEnabled) setJoysticksEnabled(true);
+            if (joyIdleTimer) { clearTimeout(joyIdleTimer); joyIdleTimer = null; }
+        }
+
+        function joyTouchEnded() {
+            joyActiveTouches = Math.max(0, joyActiveTouches - 1);
+            if (joyActiveTouches === 0) joyResetIdleTimer();
+        }
+
+        /* Re-enable joysticks when bottom half of canvas is tapped while disabled */
+        canvas.addEventListener('touchstart', function(e) {
+            if (joysticksEnabled) return;
+            var touch = e.changedTouches[0];
+            var rect = canvas.getBoundingClientRect();
+            if (touch.clientY > rect.top + rect.height * 0.5) {
+                setJoysticksEnabled(true);
+                joyResetIdleTimer();
+            }
+        });
+
+        setJoysticksEnabled(false);
+
         /* Virtual button handlers */
         function setupMobileButtons() {
             /* SDL scancodes (not JS keyCodes!) - must match KEYBOARD[] indices in C */
             var buttons = {
                 'btn-menu': { key: 41, name: 'Escape' },    /* SDL_SCANCODE_ESCAPE */
-                'btn-fire': { key: 27, name: 'X' },         /* SDL_SCANCODE_X */
                 'btn-nuke': { key: 44, name: 'Space' }      /* SDL_SCANCODE_SPACE */
             };
 
@@ -1070,44 +1063,25 @@
             });
         }
 
-        /* Virtual joystick for thrust/strafe */
-        function setupJoystick() {
-            var zone = document.getElementById('joystick-zone');
-            var base = document.getElementById('joystick-base');
-            var knob = document.getElementById('joystick-knob');
+        /* Generic joystick factory - creates touch handlers for a joystick element
+           opts.holdOnRelease: if true, knob stays at last position on release */
+        function createJoystick(zoneId, knobId, onMove, onRelease, opts) {
+            var zone = document.getElementById(zoneId);
+            var base = zone.querySelector('.joystick-base');
+            var knob = document.getElementById(knobId);
             var trackingId = null;
             var centerX = 0;
             var centerY = 0;
             var baseRadius = 0;
-            var deadZone = 0.4;
-
-            /* SDL scancodes */
-            var KEY_STRAFE_LEFT = 29;   /* Z */
-            var KEY_STRAFE_RIGHT = 6;   /* C */
-            var KEY_THRUST_UP = 82;     /* Up */
-            var KEY_THRUST_DOWN = 81;   /* Down */
-
-            var pressed = {};
-            pressed[KEY_STRAFE_LEFT] = false;
-            pressed[KEY_STRAFE_RIGHT] = false;
-            pressed[KEY_THRUST_UP] = false;
-            pressed[KEY_THRUST_DOWN] = false;
-
-            function sendKey(scancode, down) {
-                if (pressed[scancode] === !!down) return;
-                pressed[scancode] = !!down;
-                if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_virtual_key) {
-                    Module._handle_virtual_key(scancode, down ? 1 : 0);
-                }
-            }
+            var deadZone = 0.2;
+            var holdOnRelease = opts && opts.holdOnRelease;
 
             function resetKnob() {
-                knob.style.top = '50%';
-                knob.style.left = '50%';
-                sendKey(KEY_STRAFE_LEFT, false);
-                sendKey(KEY_STRAFE_RIGHT, false);
-                sendKey(KEY_THRUST_UP, false);
-                sendKey(KEY_THRUST_DOWN, false);
+                if (!holdOnRelease) {
+                    knob.style.top = '50%';
+                    knob.style.left = '50%';
+                }
+                onRelease();
             }
 
             function handleMove(touchX, touchY) {
@@ -1126,26 +1100,26 @@
                 knob.style.left = (50 + (dx / baseRadius) * 50) + '%';
                 knob.style.top = (50 + (dy / baseRadius) * 50) + '%';
 
-                /* Radial dead zone */
+                /* Normalized values with dead zone remapped to 0-1 range */
                 var nx = dx / baseRadius;
                 var ny = dy / baseRadius;
                 var ndist = Math.sqrt(nx * nx + ny * ny);
+
                 if (ndist < deadZone) {
-                    sendKey(KEY_STRAFE_LEFT, false);
-                    sendKey(KEY_STRAFE_RIGHT, false);
-                    sendKey(KEY_THRUST_UP, false);
-                    sendKey(KEY_THRUST_DOWN, false);
+                    onMove(0, 0, false);
                 } else {
-                    /* Per-axis thresholds after radial dead zone passes */
-                    sendKey(KEY_STRAFE_LEFT, nx < -deadZone);
-                    sendKey(KEY_STRAFE_RIGHT, nx > deadZone);
-                    sendKey(KEY_THRUST_UP, ny < -deadZone);    /* up on screen = thrust */
-                    sendKey(KEY_THRUST_DOWN, ny > deadZone);
+                    var remapped = (ndist - deadZone) / (1.0 - deadZone);
+                    nx = (nx / ndist) * remapped;
+                    ny = (ny / ndist) * remapped;
+                    onMove(nx, ny, true);
                 }
             }
 
+            /* touchstart on zone captures the finger, then track globally
+               so the thumb can move outside the zone without losing contact */
             zone.addEventListener('touchstart', function(e) {
-                if (trackingId !== null) return;  /* already tracking a touch */
+                joyTouchStarted();
+                if (trackingId !== null) return;
                 var touch = e.changedTouches[0];
                 trackingId = touch.identifier;
 
@@ -1158,29 +1132,81 @@
                 e.preventDefault();
             }, { passive: false });
 
-            zone.addEventListener('touchmove', function(e) {
+            /* Track move/end on document so finger works past screen edges */
+            document.addEventListener('touchmove', function(e) {
+                if (trackingId === null) return;
                 for (var i = 0; i < e.changedTouches.length; i++) {
                     if (e.changedTouches[i].identifier === trackingId) {
                         handleMove(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
                         break;
                     }
                 }
-                e.preventDefault();
-            }, { passive: false });
+            }, { passive: true });
 
             function onEnd(e) {
+                if (trackingId === null) return;
                 for (var i = 0; i < e.changedTouches.length; i++) {
                     if (e.changedTouches[i].identifier === trackingId) {
                         trackingId = null;
                         resetKnob();
+                        joyTouchEnded();
                         break;
                     }
                 }
-                e.preventDefault();
             }
 
-            zone.addEventListener('touchend', onEnd, { passive: false });
-            zone.addEventListener('touchcancel', onEnd, { passive: false });
+            document.addEventListener('touchend', onEnd, { passive: true });
+            document.addEventListener('touchcancel', onEnd, { passive: true });
+        }
+
+        /* Left joystick: thrust/strafe - sends analog X/Y */
+        function setupLeftJoystick() {
+            createJoystick('joystick-left', 'knob-left',
+                function onMove(nx, ny, active) {
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_left_stick) {
+                        Module._handle_left_stick(active ? nx : 0, active ? ny : 0);
+                    }
+                },
+                function onRelease() {
+                    if (typeof Module !== 'undefined' && Module.calledRun && Module._handle_left_stick) {
+                        Module._handle_left_stick(0, 0);
+                    }
+                }
+            );
+        }
+
+        /* Right joystick: aim + auto-fire while touching */
+        function setupRightJoystick() {
+            var RAD_TO_ANGLE = 256.0 / (2.0 * Math.PI);
+            var KEY_FIRE = 27;  /* SDL_SCANCODE_X */
+            var firing = false;
+
+            createJoystick('joystick-right', 'knob-right',
+                function onMove(nx, ny, active) {
+                    if (typeof Module === 'undefined' || !Module.calledRun) return;
+
+                    if (active) {
+                        /* atan2(y, x) -> game angle 0-255 */
+                        var rad = Math.atan2(ny, nx);
+                        var angle = Math.round(rad * RAD_TO_ANGLE) & 0xFF;
+                        if (Module._handle_right_stick) Module._handle_right_stick(angle, 1);
+                    }
+                    /* Keep firing while finger is touching, even in dead zone */
+                    if (!firing && Module._handle_virtual_key) {
+                        Module._handle_virtual_key(KEY_FIRE, 1);
+                        firing = true;
+                    }
+                },
+                function onRelease() {
+                    if (typeof Module === 'undefined' || !Module.calledRun) return;
+                    if (Module._handle_right_stick) Module._handle_right_stick(0, 0);
+                    if (firing && Module._handle_virtual_key) {
+                        Module._handle_virtual_key(KEY_FIRE, 0);
+                        firing = false;
+                    }
+                },
+                { holdOnRelease: true }
+            );
         }
 
         /* Populate controls legend based on device type */
@@ -1190,13 +1216,11 @@
 
             var html = '';
             if (isTouchDevice) {
-                /* Mobile controls - steering wheel + joystick */
-                html = '<li><span class="key">Tilt phone</span> Rotate ship (like a steering wheel)</li>' +
-                       '<li><span class="key">Left stick</span> Thrust, reverse, strafe</li>' +
-                       '<li><span class="key">FIRE</span> Shoot</li>' +
+                /* Mobile controls - twin stick */
+                html = '<li><span class="key">Left stick</span> Thrust, reverse, strafe</li>' +
+                       '<li><span class="key">Right stick</span> Aim + auto-fire</li>' +
                        '<li><span class="key">NUKE</span> Screen-clearing bomb</li>' +
-                       '<li><span class="key">MENU</span> Pause / level select</li>' +
-                       '<li style="grid-column:1/-1;opacity:0.7;font-style:italic;padding-top:4px">Hold phone upright in landscape</li>';
+                       '<li><span class="key">MENU</span> Pause / level select</li>';
             } else {
                 /* Desktop controls - compact two-column */
                 html = '<li><span class="key">Arrow Keys</span> Steer</li>' +
@@ -1217,19 +1241,15 @@
             /* Show mobile controls when game starts */
             canvas.addEventListener('click', function() {
                 if (!window.gameStarted) return;
-
-                /* Activate mobile controls */
                 mobileControls.classList.add('active');
-
-                /* Request orientation permission */
-                if (!tiltPermissionGranted) {
-                    requestOrientationPermission();
-                }
+                setJoysticksEnabled(true);
+                joyResetIdleTimer();
             });
 
-            /* Setup virtual buttons and joystick */
+            /* Setup virtual buttons and twin joysticks */
             setupMobileButtons();
-            setupJoystick();
+            setupLeftJoystick();
+            setupRightJoystick();
         }
 
         /* Populate controls on load */
@@ -1260,9 +1280,8 @@
             /* Activate mobile controls immediately on first click (no second tap needed) */
             if (isTouchDevice) {
                 mobileControls.classList.add('active');
-                if (!tiltPermissionGranted) {
-                    requestOrientationPermission();
-                }
+                setJoysticksEnabled(true);
+                joyResetIdleTimer();
             }
         });
     </script>

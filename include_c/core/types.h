@@ -23,6 +23,7 @@ typedef struct {
     float speed;            /* Forward/backward speed */
     float strafe_speed;     /* Lateral speed */
     uint8_t angle;          /* 256-angle facing direction */
+    float angle_remainder;  /* Sub-unit turn accumulator for fractional rotate speeds */
     float angular_vel;      /* Angular velocity for smooth turning */
     int8_t turn_direction;  /* -1 left, 0 straight, +1 right (for sprite selection) */
 
@@ -275,9 +276,11 @@ typedef struct {
     int mouse_x, mouse_y;
     int mouse_left, mouse_right;
 
-    /* Mobile analog inputs */
-    float tilt_steer;       /* -1 to +1 */
-    float tilt_thrust;      /* -1 to +1 */
+    /* Mobile twin-stick inputs */
+    float stick_left_x;         /* -1 (strafe left) to +1 (strafe right) */
+    float stick_left_y;         /* -1 (thrust) to +1 (reverse) */
+    int target_angle;           /* 0-255: desired ship angle from right stick */
+    int target_angle_active;    /* 1 if right stick is being touched */
     int mobile_active;
 } InputState;
 
@@ -476,6 +479,7 @@ typedef struct {
     int fire_rate;          /* Percent chance per frame to fire */
     int shockwave_chance;   /* Percent chance for shockwave attack (0 = none) */
     int spread_count;       /* Number of projectiles in spread pattern */
+    int volley_damage;      /* Damage when player overlaps boss during volley */
     const char* name;       /* Boss name for display/debugging */
 } BossTypeDef;
 
@@ -485,6 +489,7 @@ static const BossTypeDef BOSS_TYPE_DEFS[] = {
         .fire_rate = BOSS_TYPE_0_FIRE_RATE,
         .shockwave_chance = 0,
         .spread_count = BOSS_TYPE_0_SPREAD,
+        .volley_damage = 20,
         .name = "Scout Boss"
     },
     [ENEMY_STANDARD] = {
@@ -492,6 +497,7 @@ static const BossTypeDef BOSS_TYPE_DEFS[] = {
         .fire_rate = BOSS_TYPE_1_FIRE_RATE,
         .shockwave_chance = 0,
         .spread_count = 0,
+        .volley_damage = 36,
         .name = "Standard Boss"
     },
     [ENEMY_TANK] = {
@@ -499,6 +505,7 @@ static const BossTypeDef BOSS_TYPE_DEFS[] = {
         .fire_rate = BOSS_TYPE_2_FIRE_RATE,
         .shockwave_chance = BOSS_TYPE_2_SHOCKWAVE,
         .spread_count = 0,
+        .volley_damage = 38,
         .name = "Tank Boss"
     },
     [ENEMY_HUNTER] = {
@@ -506,6 +513,7 @@ static const BossTypeDef BOSS_TYPE_DEFS[] = {
         .fire_rate = SHIMDOG_FIRE_RATE,
         .shockwave_chance = SHIMDOG_SHOCKWAVE,
         .spread_count = SHIMDOG_PROJECTILES,
+        .volley_damage = 40,
         .name = "SHIMDOG"
     },
 };
@@ -528,6 +536,11 @@ static inline int boss_shockwave_chance(EnemyType type) {
 /* Get spread count for boss type */
 static inline int boss_spread_count(EnemyType type) {
     return BOSS_TYPE_DEFS[type].spread_count;
+}
+
+/* Get volley damage for boss type (contact auto-hit) */
+static inline int boss_volley_damage(EnemyType type) {
+    return BOSS_TYPE_DEFS[type].volley_damage;
 }
 
 /* Get boss name for display */

@@ -139,10 +139,12 @@ void FlushKeyboard(void) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
-/* Mobile input state - analog values for smooth control */
-float mobile_tilt_steer = 0.0f;   /* Left/right tilt: -1.0 (left) to 1.0 (right) */
-float mobile_tilt_thrust = 0.0f;  /* Forward/back tilt: -1.0 (back) to 1.0 (forward) */
-int mobile_controls_active = 0;    /* Flag indicating mobile controls are being used */
+/* Mobile twin-stick input state */
+float mobile_stick_left_x = 0.0f;    /* -1.0 (strafe left) to 1.0 (strafe right) */
+float mobile_stick_left_y = 0.0f;    /* -1.0 (thrust) to 1.0 (reverse) */
+int mobile_target_angle = 0;          /* 0-255: desired ship angle from right stick */
+int mobile_target_angle_active = 0;   /* 1 if right stick is being touched */
+int mobile_controls_active = 0;       /* Flag indicating mobile controls are being used */
 
 /*
  * Handle virtual key press from mobile buttons
@@ -157,48 +159,31 @@ void handle_virtual_key(int sdl_scancode, int pressed) {
 }
 
 /*
- * Handle device tilt input for analog steering and thrust
- * EMSCRIPTEN: Called from JavaScript with gamma (steer) and beta (thrust) values
- * steer: -1.0 (tilt left) to 1.0 (tilt right) for ship rotation
- * thrust: -1.0 (tilt back) to 1.0 (tilt forward) for acceleration
+ * Handle left stick analog input (thrust/strafe)
+ * x: -1.0 (strafe left) to 1.0 (strafe right)
+ * y: -1.0 (thrust forward) to 1.0 (reverse)
  */
 EMSCRIPTEN_KEEPALIVE
-void handle_tilt_input(float steer, float thrust) {
+void handle_left_stick(float x, float y) {
     mobile_controls_active = 1;
-    mobile_tilt_steer = steer;
-    mobile_tilt_thrust = thrust;
-
-    /* Clamp values to valid range */
-    if (mobile_tilt_steer > 1.0f) mobile_tilt_steer = 1.0f;
-    if (mobile_tilt_steer < -1.0f) mobile_tilt_steer = -1.0f;
-    if (mobile_tilt_thrust > 1.0f) mobile_tilt_thrust = 1.0f;
-    if (mobile_tilt_thrust < -1.0f) mobile_tilt_thrust = -1.0f;
+    mobile_stick_left_x = x;
+    mobile_stick_left_y = y;
+    if (mobile_stick_left_x > 1.0f) mobile_stick_left_x = 1.0f;
+    if (mobile_stick_left_x < -1.0f) mobile_stick_left_x = -1.0f;
+    if (mobile_stick_left_y > 1.0f) mobile_stick_left_y = 1.0f;
+    if (mobile_stick_left_y < -1.0f) mobile_stick_left_y = -1.0f;
 }
 
 /*
- * Get the current analog steering value
- * Returns: -1.0 (full left) to 1.0 (full right), 0.0 = no input
+ * Handle right stick angle input (ship rotation target)
+ * angle: 0-255 game angle (0=right, 64=down, 128=left, 192=up)
+ * active: 1 if stick is being touched, 0 if released
  */
 EMSCRIPTEN_KEEPALIVE
-float get_mobile_steer(void) {
-    return mobile_tilt_steer;
-}
-
-/*
- * Get the current analog thrust value
- * Returns: -1.0 (full reverse) to 1.0 (full forward), 0.0 = no input
- */
-EMSCRIPTEN_KEEPALIVE
-float get_mobile_thrust(void) {
-    return mobile_tilt_thrust;
-}
-
-/*
- * Check if mobile controls are active
- */
-EMSCRIPTEN_KEEPALIVE
-int is_mobile_active(void) {
-    return mobile_controls_active;
+void handle_right_stick(int angle, int active) {
+    mobile_controls_active = 1;
+    mobile_target_angle = angle & 0xFF;
+    mobile_target_angle_active = active;
 }
 
 /*

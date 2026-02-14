@@ -60,8 +60,10 @@ extern void sseMemcpy32(void* dst, const void* src, size_t count);
 extern void sseMemset32(void* dst, uint32_t value, size_t count);
 
 #ifdef __EMSCRIPTEN__
-extern float mobile_tilt_steer;
-extern float mobile_tilt_thrust;
+extern float mobile_stick_left_x;
+extern float mobile_stick_left_y;
+extern int mobile_target_angle;
+extern int mobile_target_angle_active;
 extern int mobile_controls_active;
 #endif
 
@@ -178,17 +180,23 @@ void platform_update_input(PlatformInputState* input) {
     input->mouse_right = MOUSE_RBUTTON;
 
 #ifdef __EMSCRIPTEN__
-    /* Mobile tilt controls */
+    /* Mobile twin-stick controls */
     if (mobile_controls_active) {
-        input->analog_steer = mobile_tilt_steer;
-        input->analog_thrust = mobile_tilt_thrust;
+        input->stick_left_x = mobile_stick_left_x;
+        input->stick_left_y = mobile_stick_left_y;
+        input->target_angle = mobile_target_angle;
+        input->target_angle_active = mobile_target_angle_active;
     } else {
-        input->analog_steer = 0.0f;
-        input->analog_thrust = 0.0f;
+        input->stick_left_x = 0.0f;
+        input->stick_left_y = 0.0f;
+        input->target_angle = 0;
+        input->target_angle_active = 0;
     }
 #else
-    input->analog_steer = 0.0f;
-    input->analog_thrust = 0.0f;
+    input->stick_left_x = 0.0f;
+    input->stick_left_y = 0.0f;
+    input->target_angle = 0;
+    input->target_angle_active = 0;
 #endif
 }
 

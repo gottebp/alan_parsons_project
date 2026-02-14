@@ -281,47 +281,76 @@ static float apply_friction(float value, float friction, float scale) {
 /* Handle player rotation input - direct angle control like the original */
 static void player_handle_rotation(Player* p, const InputState* input, float scale) {
     p->turn_direction = 0;
-    int turn_rate = (int)(PLAYER_ROTATE_SPEED * scale);
-    if (turn_rate < 1) turn_rate = 1;
+    float turn_rate = PLAYER_ROTATE_SPEED * scale;
+    if (turn_rate < 1.0f) turn_rate = 1.0f;
 
-    if (input->mobile_active && (input->tilt_steer > 0.15f || input->tilt_steer < -0.15f)) {
-        /* Mobile analog steering - direct angle change proportional to tilt */
-        int tilt_turn = (int)(input->tilt_steer * turn_rate * 1.5f);
-        p->angle += (int8_t)tilt_turn;
-        p->turn_direction = (input->tilt_steer > 0) ? 1 : -1;
+    /* Determine desired turn amount (float) */
+    float turn = 0.0f;
+    if (input->target_angle_active) {
+        /* Right stick: turn toward target angle, shortest path */
+        int8_t diff = (int8_t)((uint8_t)input->target_angle - p->angle);
+        int absdiff = (diff > 0) ? diff : -diff;
+        if (diff > 0) {
+            turn = (diff < turn_rate) ? diff : turn_rate;
+            if (absdiff > (int)turn_rate) p->turn_direction = 1;
+        } else if (diff < 0) {
+            turn = (diff > -turn_rate) ? diff : -turn_rate;
+            if (absdiff > (int)turn_rate) p->turn_direction = -1;
+        }
     } else {
-        /* Keyboard rotation - direct angle change */
+        /* Keyboard rotation */
         if (input->right) {
-            p->angle += (int8_t)turn_rate;
+            turn += turn_rate;
             p->turn_direction = 1;
         }
         if (input->left) {
-            p->angle -= (int8_t)turn_rate;
+            turn -= turn_rate;
             p->turn_direction = -1;
         }
     }
+
+    /* Accumulate fractional turn and apply whole-unit steps */
+    p->angle_remainder += turn;
+    int steps = (int)p->angle_remainder;
+    p->angle += (uint8_t)steps;
+    p->angle_remainder -= (float)steps;
 }
 
 /* Handle player thrust input */
 static void player_handle_thrust(Player* p, const InputState* input, float scale) {
     float accel = p->acceleration * scale;
 
-    if (input->mobile_active && (input->tilt_thrust > 0.2f || input->tilt_thrust < -0.2f)) {
-        /* Mobile analog thrust */
-        float thrust_input = input->tilt_thrust;
-        if (thrust_input > 0.2f && p->speed < p->max_speed) {
-            p->speed += accel * thrust_input;
-        } else if (thrust_input < -0.2f && p->speed > p->min_speed) {
-            p->speed -= accel * (-thrust_input);
+    if (input->mobile_active) {
+        /* Left stick Y axis: magnitude sets proportional target speed.
+           Push stick 50% = 50% max speed. Accelerate toward target. */
+        float sy = input->stick_left_y;
+        if (sy < -0.01f) {
+            float target = p->max_speed * (-sy);
+            if (p->speed < target) {
+                p->speed += accel;
+                if (p->speed > target) p->speed = target;
+            } else if (p->speed > target) {
+                p->speed -= accel;
+                if (p->speed < target) p->speed = target;
+            }
+        } else if (sy > 0.01f) {
+            float target = p->min_speed * sy;
+            if (p->speed > target) {
+                p->speed -= accel;
+                if (p->speed < target) p->speed = target;
+            } else if (p->speed < target) {
+                p->speed += accel;
+                if (p->speed > target) p->speed = target;
+            }
         }
-    } else {
-        /* Keyboard thrust */
-        if (input->up && p->speed < p->max_speed) {
-            p->speed += accel;
-        }
-        if (input->down && p->speed > p->min_speed) {
-            p->speed -= accel;
-        }
+    }
+
+    /* Keyboard thrust (always active, works alongside stick) */
+    if (input->up && p->speed < p->max_speed) {
+        p->speed += accel;
+    }
+    if (input->down && p->speed > p->min_speed) {
+        p->speed -= accel;
     }
 }
 
@@ -329,23 +358,48 @@ static void player_handle_thrust(Player* p, const InputState* input, float scale
 static void player_handle_strafe(Player* p, const InputState* input, float scale) {
     float accel = p->acceleration * scale;
 
+    if (input->mobile_active) {
+        /* Left stick X axis: magnitude sets proportional target strafe speed. */
+        float sx = input->stick_left_x;
+        if (sx > 0.01f) {
+            float target = p->max_strafe * sx;
+            if (p->strafe_speed < target) {
+                p->strafe_speed += accel;
+                if (p->strafe_speed > target) p->strafe_speed = target;
+            } else if (p->strafe_speed > target) {
+                p->strafe_speed -= accel;
+                if (p->strafe_speed < target) p->strafe_speed = target;
+            }
+        } else if (sx < -0.01f) {
+            float target = p->min_strafe * (-sx);
+            if (p->strafe_speed > target) {
+                p->strafe_speed -= accel;
+                if (p->strafe_speed < target) p->strafe_speed = target;
+            } else if (p->strafe_speed < target) {
+                p->strafe_speed += accel;
+                if (p->strafe_speed > target) p->strafe_speed = target;
+            }
+        }
+    }
+
+    /* Keyboard strafe (always active, works alongside stick) */
     if (input->strafe_right) {
         if (p->strafe_speed < p->max_strafe) {
             p->strafe_speed += accel;
         }
-        /* Show banking sprite while strafe key held (if not turning) */
-        if (p->turn_direction == 0) {
-            p->turn_direction = 1;
-        }
+        if (p->turn_direction == 0) p->turn_direction = 1;
     }
     if (input->strafe_left) {
         if (p->strafe_speed > p->min_strafe) {
             p->strafe_speed -= accel;
         }
-        /* Show banking sprite while strafe key held (if not turning) */
-        if (p->turn_direction == 0) {
-            p->turn_direction = -1;
-        }
+        if (p->turn_direction == 0) p->turn_direction = -1;
+    }
+
+    /* Banking sprite from strafe velocity (smooth, avoids input jitter) */
+    if (p->turn_direction == 0) {
+        if (p->strafe_speed > 1.0f) p->turn_direction = 1;
+        else if (p->strafe_speed < -1.0f) p->turn_direction = -1;
     }
 }
 

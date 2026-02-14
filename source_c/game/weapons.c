@@ -7,6 +7,28 @@
 
 #include "../../include_c/game/game.h"
 
+/* Boss volley: auto-hit damage + spark burst when player overlaps boss */
+static void boss_volley_check(Game* game, Enemy* e) {
+    float dx = e->position.x - game->player.position.x;
+    float dy = e->position.y - game->player.position.y;
+    if (dx > MAP_WIDTH / 2) dx -= MAP_WIDTH;
+    else if (dx < -MAP_WIDTH / 2) dx += MAP_WIDTH;
+    if (dy > MAP_HEIGHT / 2) dy -= MAP_HEIGHT;
+    else if (dy < -MAP_HEIGHT / 2) dy += MAP_HEIGHT;
+    float overlap = BOSS_COLLISION + PLAYER_BODY_RADIUS;
+    if (fabsf(dx) < overlap && fabsf(dy) < overlap) {
+        player_take_damage(game, boss_volley_damage(e->type),
+                           game->player.position);
+        uint8_t sa = game_rand_range(game, 256);
+        for (int i = 0; i < 8; i++) {
+            particle_spawn(game, COLLISION_NONE, PARTICLE_SIZE_SMALL, 14,
+                          game->player.position, sa + i * 32, 7.0f, 18, 0);
+            particle_spawn(game, COLLISION_NONE, PARTICLE_SIZE_LARGE, 2,
+                          game->player.position, sa + i * 32 + 16, 4.5f, 12, 0);
+        }
+    }
+}
+
 /* Enemy firing speeds (from original) */
 static const float ENEMY_FIRE_SPEEDS[] = {
     12.6f, 14.5331f, 16.31f, 18.2f, 7.3112f
@@ -220,6 +242,8 @@ void enemy_boss_fire(Game* game, Enemy* e) {
                                   e->position, a, ENEMY_FIRE_SPEEDS[4], 100, 1);
                 }
             }
+
+            boss_volley_check(game, e);
         }
     } else {
         /* Regular bosses - progressive difficulty */
@@ -271,6 +295,8 @@ void enemy_boss_fire(Game* game, Enemy* e) {
                     }
                 }
             }
+
+            boss_volley_check(game, e);
         }
     }
 }

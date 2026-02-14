@@ -59,10 +59,10 @@
 #define PLAYER_MAX_SPEED        16.0f
 #define PLAYER_MIN_SPEED        -12.0f  /* Reverse speed */
 #define PLAYER_STRAFE_FRICTION  0.20f
-#define PLAYER_MAX_STRAFE       12.0f
-#define PLAYER_MIN_STRAFE       -12.0f
+#define PLAYER_MAX_STRAFE       14.0f
+#define PLAYER_MIN_STRAFE       -14.0f
 #define PLAYER_MASS             100.0f
-#define PLAYER_ROTATE_SPEED     4       /* Max angular velocity (legacy compatibility) */
+#define PLAYER_ROTATE_SPEED     3.4f    /* Max angular velocity (units per frame at scale 1) */
 #define PLAYER_START_ANGLE      (-64)   /* Facing up (north) */
 
 /* Player angular momentum */

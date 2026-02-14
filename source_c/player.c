@@ -33,8 +33,8 @@ float fltPlayerMaxSpeed = 16.0f;
 float fltPlayerMinSpeed = -12.0f;
 float fltPlayerMass = 100.0f;
 float fltPlayerStrafeFriction = 0.20f;
-float fltPlayerMaxStrafeSpeed = 12.0f;
-float fltPlayerMinStrafeSpeed = -12.0f;
+float fltPlayerMaxStrafeSpeed = 14.0f;
+float fltPlayerMinStrafeSpeed = -14.0f;
 
 /* Angular momentum - for bridge compatibility */
 float fltPlayerAngularVel = 0.0f;

@@ -60,8 +60,10 @@ extern void UpdateInput(void);
 extern void FlushKeyboard(void);
 
 #ifdef __EMSCRIPTEN__
-extern float mobile_tilt_steer;
-extern float mobile_tilt_thrust;
+extern float mobile_stick_left_x;
+extern float mobile_stick_left_y;
+extern int mobile_target_angle;
+extern int mobile_target_angle_active;
 extern int mobile_controls_active;
 #endif
 
@@ -518,9 +520,11 @@ void app_poll_input(App* app) {
     in->mouse_right = MOUSE_RBUTTON;
 
 #ifdef __EMSCRIPTEN__
-    /* Mobile tilt controls */
-    in->tilt_steer = mobile_tilt_steer;
-    in->tilt_thrust = mobile_tilt_thrust;
+    /* Mobile twin-stick controls */
+    in->stick_left_x = mobile_stick_left_x;
+    in->stick_left_y = mobile_stick_left_y;
+    in->target_angle = mobile_target_angle;
+    in->target_angle_active = mobile_target_angle_active;
     in->mobile_active = mobile_controls_active;
 #endif
 }

@@ -73,9 +73,11 @@ typedef struct PlatformInputState {
     int mouse_x, mouse_y;
     int mouse_left, mouse_right;
 
-    /* Analog (for mobile tilt controls) */
-    float analog_steer;   /* -1.0 to 1.0 */
-    float analog_thrust;  /* -1.0 to 1.0 */
+    /* Mobile twin-stick */
+    float stick_left_x;   /* -1.0 to 1.0 */
+    float stick_left_y;   /* -1.0 to 1.0 */
+    int target_angle;     /* 0-255 */
+    int target_angle_active;
 } PlatformInputState;
 
 /* Update input state - call once per frame */
