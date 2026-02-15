@@ -106,8 +106,8 @@ See [ROADMAP.md](ROADMAP.md) for the migration plan toward zero globals.
 
 - **2002**: Original x86 assembly (ECE291 final project)
 - **2002**: SDL port for Linux/Windows
-- **2024**: C port with WASM support
-- **2025**: Clean architecture refactoring
+- **2026**: C port with WASM support
+- **2026**: Clean architecture refactoring
 - **2026**: Body collisions, balance tuning, mobile controls
 
 ## Links
