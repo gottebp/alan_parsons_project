@@ -103,7 +103,9 @@ static void ending_tick(App* app) {
             g_ending.phase = END_START_MUSIC;
             g_ending.frame = 0;
         }
-        break;
+        /* Keep presenting the frozen victory screen to prevent WebGL context loss */
+        UpdateScreen();
+        return;
 
     case END_START_MUSIC: {
         AudioAssets* a = &app->audio;
@@ -114,6 +116,9 @@ static void ending_tick(App* app) {
             Mix_PlayMusic(a->music_ending, 1);
         }
         Mix_HaltChannel(-1);
+
+        /* Present to keep WebGL context alive during audio setup */
+        UpdateScreen();
 
         if (!app->visuals.story_clips) {
             /* No clips — skip straight to done */
@@ -217,7 +222,9 @@ static void ending_tick(App* app) {
             g_ending.fade_color = 0x00000000; /* transparent black */
             sseMemcpy32(ScreenTemp, ScreenOff, SCREEN_WIDTH * SCREEN_HEIGHT);
         }
-        break;
+        /* Keep presenting to prevent WebGL context loss during wait */
+        UpdateScreen();
+        return;
 
     case END_FADE_TO_BLACK:
         sseMemcpy32(ScreenOff, ScreenTemp, SCREEN_WIDTH * SCREEN_HEIGHT);
