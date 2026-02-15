@@ -43,7 +43,7 @@ extern void UpdateInput(void);
 extern void FlushKeyboard(void);
 extern uint8_t KEYBOARD[320];
 extern uint16_t MOUSE_LBUTTON;
-extern int Mix_FadeOutMusic(int ms);
+extern int Mix_HaltMusic(void);
 extern void* Mix_LoadMUS(const char* file);
 extern int Mix_VolumeMusic(int volume);
 extern int Mix_PlayMusic(void* music, int loops);
@@ -88,7 +88,8 @@ static void ending_start(App* app) {
     g_ending.clip_index = 0;
     g_ending.fade_color = 0;
     app->in_ending = 1;
-    Mix_FadeOutMusic(100);
+    /* SDL_mixer fade-out can stall on wasm; stop immediately before ending music. */
+    Mix_HaltMusic();
 }
 
 /* Advance one frame of the ending sequence. Called from emscripten_frame. */

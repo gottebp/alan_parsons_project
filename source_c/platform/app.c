@@ -256,9 +256,10 @@ static void load_audio_assets(App* app) {
         snd_effect_explosion[i] = a->snd_explosion[i];
     }
 
-    /* Music - loaded on demand */
+    /* Music */
     a->music_menu = NULL;
-    a->music_ending = NULL;
+    /* Preload ending theme to avoid runtime decode stalls during wasm transition. */
+    a->music_ending = Mix_LoadMUS("./sound/ending_theme.ogg");
     for (int i = 0; i < 6; i++) {
         a->music_level[i] = NULL;
     }
