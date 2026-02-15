@@ -112,4 +112,7 @@ See [ROADMAP.md](ROADMAP.md) for the migration plan toward zero globals.
 
 ## Links
 
+- Play online: http://www.particlefield.com/projects/alan-parsons/game.html
 - Original website: http://www.particlefield.com
+- Writeup: https://www.linkedin.com/pulse/some-projects-stick-you-longer-than-should-benjamin-gottemoller-dmm7c/
+- Source: https://github.com/gottebp/alan_parsons_project

@@ -575,6 +575,13 @@
             </ul>
         </div>
 
+        <div id="about" class="hidden" style="background: rgba(26, 47, 26, 0.8); padding: 12px 20px; border-radius: 8px; border: 1px solid #8ba87f; max-width: 600px; width: 100%; line-height: 1.5; font-size: 0.88em;">
+            <h2 style="color: #d4af37; margin: 0 0 6px 0; font-size: 1.1em;">About</h2>
+            <p style="margin: 0 0 8px 0;">Built in x86 assembly in under two weeks as a final project for ECE 291 at the University of Illinois (2002). The original engine pushed 10,000 particles at 60fps with hand-tuned SSE memory ops, a Mersenne Twister RNG, and toroidal map physics — all software-rendered.</p>
+            <p style="margin: 0 0 8px 0;">In 2024 the assembly was ported to C with the help of <a href="https://claude.ai" target="_blank" style="color: #c9a65c; text-decoration: none;">Claude Code</a> and compiled to WebAssembly via Emscripten, bringing it back to life in the browser. <a href="https://www.linkedin.com/pulse/some-projects-stick-you-longer-than-should-benjamin-gottemoller-dmm7c/" target="_blank" style="color: #c9a65c; text-decoration: none;">Read the full story.</a></p>
+            <p style="margin: 0; color: #6a8a6a;">Scott Moeller, Dave Lytle, Marty Cantzler, Andrew Gottemoller</p>
+        </div>
+
         <!-- Mobile touch controls overlay -->
         <div id="mobile-controls">
             <div id="btn-menu" class="mobile-btn">MENU</div>
@@ -617,6 +624,7 @@
         var resetBtn = document.getElementById('reset-btn');
         var captainPlanetBtn = document.getElementById('captain-planet-btn');
         var controlsDiv = document.getElementById('controls');
+        var aboutDiv = document.getElementById('about');
         var startOverlay = document.getElementById('start-overlay');
         window.gameStarted = false;
 
@@ -875,6 +883,7 @@
                     }
                     resetBtn.classList.remove('hidden');
                     controlsDiv.classList.remove('hidden');
+                    aboutDiv.classList.remove('hidden');
                 }
             },
             totalDependencies: 0,
@@ -1287,5 +1296,13 @@
     </script>
 
     {{{ SCRIPT }}}
+
+    <div style="text-align: center; padding: 15px 10px; margin-top: 10px; font-size: 0.85em; color: #6a8a6a;">
+        <a href="https://www.linkedin.com/pulse/some-projects-stick-you-longer-than-should-benjamin-gottemoller-dmm7c/" target="_blank" style="color: #a8c9a8; text-decoration: none;">The Story</a>
+        &middot;
+        <a href="https://github.com/gottebp/alan_parsons_project" target="_blank" style="color: #a8c9a8; text-decoration: none;">Source on GitHub</a>
+        &middot;
+        <a href="http://www.particlefield.com" target="_blank" style="color: #a8c9a8; text-decoration: none;">ParticleField.com</a>
+    </div>
 </body>
 </html>
